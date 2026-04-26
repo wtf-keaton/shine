@@ -1,0 +1,13 @@
+{
+  "name": "create-shine-app",
+  "version": "1.0.0",
+  "description": "Scaffolding tool for Shine Framework",
+  "type": "module",
+  "bin": {
+    "create-shine-app": "index.js"
+  },
+  "dependencies": {
+    "kolorist": "^1.8.0",
+    "prompts": "^2.4.2"
+  }
+}

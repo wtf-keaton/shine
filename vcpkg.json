@@ -1,0 +1,14 @@
+{
+  "name": "shine",
+  "version": "0.1.0",
+  "description": "Cross-platform capabilities-driven desktop framework",
+  "dependencies": [
+    {
+      "name": "nlohmann-json"
+    },
+    {
+      "name": "webview2",
+      "platform": "windows"
+    }
+  ]
+}

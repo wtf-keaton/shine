@@ -1,0 +1,27 @@
+{
+  "name": "@shine-ui/api",
+  "version": "1.0.0",
+  "description": "JavaScript API for Shine Framework",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": ["shine", "framework", "desktop"],
+  "author": "Nikita Mazaev",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

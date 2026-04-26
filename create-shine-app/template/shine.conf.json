@@ -1,0 +1,13 @@
+{
+  "window": {
+    "title": "Shine Secure App",
+    "width": 900,
+    "height": 600
+  },
+  "capabilities": {
+    "allowedCommands": [
+      "fs_read_text_file",
+      "window_drag"
+    ]
+  }
+}
