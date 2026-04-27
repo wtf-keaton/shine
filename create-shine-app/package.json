@@ -6,6 +6,10 @@
   "bin": {
     "create-shine-app": "index.js"
   },
+  "files": [
+    "index.js",
+    "template"
+  ],
   "dependencies": {
     "adm-zip": "^0.5.16",
     "kolorist": "^1.8.0",
