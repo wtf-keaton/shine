@@ -127,7 +127,7 @@ async function init() {
     }
 
     async function downloadAndExtractShine() {
-        const DEFAULT_ZIP_URL = 'https://github.com/wtf-keaton/shine/releases/download/v1.0.0/shine-framework-v1.0.0.zip';
+        const DEFAULT_ZIP_URL = 'https://github.com/wtf-keaton/shine/releases/download/v1.0.1/shine-framework-v1.0.1.zip';
         const zipUrl = (process.env.SHINE_ZIP_URL || DEFAULT_ZIP_URL).trim();
 
         const headers = {
