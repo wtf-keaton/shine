@@ -7,7 +7,7 @@ import os from 'os';
 import https from 'https';
 import prompts from 'prompts';
 import { blue, green, reset, bold } from 'kolorist';
-import * as tar from 'tar';
+import AdmZip from 'adm-zip';
 
 // Resolve current script directory (ESM-friendly __dirname).
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -84,10 +84,7 @@ async function init() {
                 }
 
                 if (res.statusCode !== 200) {
-                    const hint = (res.statusCode === 401 || res.statusCode === 403)
-                        ? "\nHint: set GITHUB_TOKEN (or SHINE_GITHUB_TOKEN) with access to the repository."
-                        : "";
-                    reject(new Error(`Failed to download ${url}. Status: ${res.statusCode}${hint}`));
+                    reject(new Error(`Failed to download ${url}. Status: ${res.statusCode}`));
                     return;
                 }
 
@@ -100,164 +97,68 @@ async function init() {
         });
     }
 
-    async function fetchJson(url, headers = {}) {
-        return await new Promise((resolve, reject) => {
-            let body = '';
-            https.get(url, { headers }, (res) => {
-                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                    fetchJson(res.headers.location, headers).then(resolve, reject);
-                    return;
-                }
-                if (res.statusCode !== 200) {
-                    const hint = (res.statusCode === 401 || res.statusCode === 403)
-                        ? "\nHint: set GITHUB_TOKEN (or SHINE_GITHUB_TOKEN) with access to the repository."
-                        : "";
-                    reject(new Error(`Failed to fetch ${url}. Status: ${res.statusCode}${hint}`));
-                    return;
-                }
-                res.setEncoding('utf8');
-                res.on('data', (chunk) => body += chunk);
-                res.on('end', () => {
-                    try {
-                        resolve(JSON.parse(body));
-                    } catch (e) {
-                        reject(new Error(`Failed to parse JSON from ${url}: ${e?.message || e}`));
-                    }
-                });
-            }).on('error', reject);
-        });
-    }
-
-    function normalizeRepo(repo) {
-        // Accept:
-        // - https://github.com/user/repo
-        // - https://github.com/user/repo.git
-        // - git@github.com:user/repo.git
-        let r = repo.trim();
-        if (r.endsWith('.git')) r = r.slice(0, -4);
-        if (r.startsWith('git@github.com:')) {
-            r = 'https://github.com/' + r.slice('git@github.com:'.length);
-            if (r.endsWith('.git')) r = r.slice(0, -4);
+    function listDirSafe(dir) {
+        try {
+            return fs.readdirSync(dir, { withFileTypes: true });
+        } catch {
+            return [];
         }
-        return r;
     }
 
-    function parseGithubOwnerRepo(repoUrl) {
-        const r = normalizeRepo(repoUrl);
-        const m = r.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/i);
-        if (!m) return null;
-        return { owner: m[1], repo: m[2] };
+    function removeDirRecursive(dir) {
+        try {
+            fs.rmSync(dir, { recursive: true, force: true });
+        } catch {
+            // ignore
+        }
+    }
+
+    function moveDirContentsUp(oneChildDir, target) {
+        const entries = listDirSafe(oneChildDir);
+        for (const e of entries) {
+            const from = path.join(oneChildDir, e.name);
+            const to = path.join(target, e.name);
+            if (fs.existsSync(to)) {
+                throw new Error(`Extraction produced an unexpected existing path: ${to}`);
+            }
+            fs.renameSync(from, to);
+        }
+        removeDirRecursive(oneChildDir);
     }
 
     async function downloadAndExtractShine() {
-        const repoUrl = process.env.SHINE_REPO || 'https://github.com/wtf-keaton/shine';
-        const ref = (process.env.SHINE_REF || 'develop').trim();
-        const releaseTag = (process.env.SHINE_RELEASE_TAG || '').trim(); // legacy override
+        const DEFAULT_ZIP_URL = 'https://github.com/wtf-keaton/shine/releases/download/v1.0.0/shine-framework-v1.0.0.zip';
+        const zipUrl = (process.env.SHINE_ZIP_URL || DEFAULT_ZIP_URL).trim();
 
-        // Prefer GitHub API endpoints when available (supports auth).
-        // You can also override with a fully-qualified URL:
-        //   SHINE_TARBALL_URL=https://.../some.tar.gz
-        const explicitTarball = process.env.SHINE_TARBALL_URL && process.env.SHINE_TARBALL_URL.trim();
-
-        const gh = parseGithubOwnerRepo(repoUrl);
-
-        const token = (process.env.GITHUB_TOKEN || process.env.SHINE_GITHUB_TOKEN || '').trim();
         const headers = {
             'User-Agent': 'create-shine-app',
-            'Accept': 'application/vnd.github+json'
+            'Accept': 'application/octet-stream'
         };
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-
-        let tarballUrl = '';
-        if (explicitTarball) {
-            tarballUrl = explicitTarball;
-        } else if (gh) {
-            // Default: always use the latest GitHub Release.
-            // This keeps users on the newest version without requiring env vars.
-            const latest = await fetchJson(
-                `https://api.github.com/repos/${gh.owner}/${gh.repo}/releases/latest`,
-                headers
-            );
-
-            // If you attach a source archive asset (recommended), we prefer it.
-            // Fallback: GitHub-provided tarball_url.
-            const preferredAssetName = (process.env.SHINE_RELEASE_ASSET_NAME || 'shine-src.tar.gz').trim(); // optional override
-
-            tarballUrl = latest.tarball_url;
-            if (Array.isArray(latest.assets)) {
-                const a = latest.assets.find(x => x && x.name === preferredAssetName);
-                if (a && a.url) {
-                    tarballUrl = a.url; // GitHub API asset URL (requires Accept: octet-stream)
-                }
-            }
-
-            // Legacy mode: allow fetching a specific release by tag if someone needs it.
-            if (releaseTag) {
-                const rel = await fetchJson(
-                    `https://api.github.com/repos/${gh.owner}/${gh.repo}/releases/tags/${encodeURIComponent(releaseTag)}`,
-                    headers
-                );
-                tarballUrl = rel.tarball_url;
-
-                const assetName = (process.env.SHINE_RELEASE_ASSET_NAME || '').trim();
-                if (assetName && Array.isArray(rel.assets)) {
-                    const a = rel.assets.find(x => x && x.name === assetName);
-                    if (!a) {
-                        throw new Error(`Release asset not found: ${assetName}`);
-                    }
-                    tarballUrl = a.url;
-                }
-            }
-        } else if (releaseTag) {
-            if (!gh) {
-                throw new Error(`SHINE_RELEASE_TAG requires SHINE_REPO to be a GitHub repo URL (https://github.com/<owner>/<repo>). Got: ${repoUrl}`);
-            }
-            const release = await fetchJson(
-                `https://api.github.com/repos/${gh.owner}/${gh.repo}/releases/tags/${encodeURIComponent(releaseTag)}`,
-                headers
-            );
-
-            // Prefer GitHub-provided source tarball for the release tag.
-            // This still works for private repos when authenticated.
-            tarballUrl = release.tarball_url;
-
-            // Optional: allow selecting a specific release asset by name.
-            const assetName = (process.env.SHINE_RELEASE_ASSET_NAME || '').trim();
-            if (assetName && Array.isArray(release.assets)) {
-                const a = release.assets.find(x => x && x.name === assetName);
-                if (!a) {
-                    throw new Error(`Release asset not found: ${assetName}`);
-                }
-                tarballUrl = a.url; // GitHub API asset URL (requires Accept: octet-stream)
-            }
-        } else {
-            tarballUrl = gh
-                ? `https://api.github.com/repos/${gh.owner}/${gh.repo}/tarball/${encodeURIComponent(ref)}`
-                : `${normalizeRepo(repoUrl)}/archive/${encodeURIComponent(ref)}.tar.gz`;
-        }
-
-        // If downloading a release asset via API "assets.url", need octet-stream accept header.
-        const isGithubAssetApiUrl = tarballUrl.startsWith('https://api.github.com/') && tarballUrl.includes('/releases/assets/');
-        const dlHeaders = isGithubAssetApiUrl
-            ? { ...headers, 'Accept': 'application/octet-stream' }
-            : headers;
 
         fs.mkdirSync(shineDir, { recursive: true });
 
-        const tmpFile = path.join(os.tmpdir(), `shine-src-${Date.now()}.tar.gz`);
-        const label = (releaseTag ? `release:${releaseTag}` : 'latest-release');
-        console.log(`\nDownloading Shine sources (${blue(label)})...`);
-        console.log(reset(`  ${tarballUrl}`));
+        const tmpZip = path.join(os.tmpdir(), `shine-framework-${Date.now()}.zip`);
+        console.log(`\nDownloading Shine framework archive...`);
+        console.log(reset(`  ${zipUrl}`));
 
-        await downloadFile(tarballUrl, tmpFile, dlHeaders);
+        await downloadFile(zipUrl, tmpZip, headers);
         console.log(`Extracting Shine into ${green(shineDir)}...`);
 
-        // GitHub tarballs have a top-level folder; strip it.
-        await tar.x({ file: tmpFile, cwd: shineDir, strip: 1 });
+        const zip = new AdmZip(tmpZip);
+        zip.extractAllTo(shineDir, true);
 
-        try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+        // If the zip contains a single top-level folder (common for release zips),
+        // move its contents up into shineDir to keep the expected layout.
+        const top = listDirSafe(shineDir)
+            .filter(e => e.name !== '__MACOSX' && e.name !== '.DS_Store');
+
+        if (top.length === 1 && top[0].isDirectory()) {
+            const wrapper = path.join(shineDir, top[0].name);
+            moveDirContentsUp(wrapper, shineDir);
+            removeDirRecursive(path.join(shineDir, '__MACOSX'));
+        }
+
+        try { fs.unlinkSync(tmpZip); } catch { /* ignore */ }
     }
 
     await downloadAndExtractShine();

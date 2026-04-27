@@ -14,7 +14,6 @@ int main() {
         shine::App app;
 
 #ifndef _DEBUG
-        // In production we serve frontend assets from memory (no disk I/O).
         app.GetWebView().SetAssetProvider([](std::string_view relPath)
                                              -> std::optional<shine::engine::WebView::AssetResponse> {
             auto a = shine_app::embedded_assets::Find(relPath);

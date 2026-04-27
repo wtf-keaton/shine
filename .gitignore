@@ -71,3 +71,4 @@ Testing/
 
 .npmrc
 node_modules
+*.zip

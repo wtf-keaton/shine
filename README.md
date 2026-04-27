@@ -1,5 +1,7 @@
 # Shine
 
+### ! IMPORTANT: Windows only now. WIP
+
 Build compact, high-performance, and secure desktop applications using a web frontend — powered by modern C++20.
 
 Shine is **inspired by [Tauri](https://tauri.app/)**: you build your UI with modern web tooling (Vite/React/etc.), while the native side stays lightweight, secure, and focused on OS integration.
@@ -9,7 +11,6 @@ Shine is **inspired by [Tauri](https://tauri.app/)**: you build your UI with mod
 - **`core/`**: the Shine runtime (window + WebView + IPC router)
 - **`components/`**: optional native components (example: filesystem)
 - **`create-shine-app/`**: project scaffolding tool (`npx create-shine-app@latest`)
-- **`samples/`**: example apps
 
 ## Quick start (recommended)
 

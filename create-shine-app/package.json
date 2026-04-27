@@ -7,8 +7,8 @@
     "create-shine-app": "index.js"
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "kolorist": "^1.8.0",
-    "prompts": "^2.4.2",
-    "tar": "^7.5.0"
+    "prompts": "^2.4.2"
   }
 }
