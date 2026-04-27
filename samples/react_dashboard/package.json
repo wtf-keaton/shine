@@ -1,0 +1,13 @@
+{
+  "name": "shine-react-dashboard-sample",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "shine": "node ./scripts/shine.mjs",
+    "shine:build": "node ./scripts/shine.mjs build",
+    "shine:frontend:install": "npm --prefix ./frontend install",
+    "shine:frontend:build": "npm --prefix ./frontend run build",
+    "shine:embed": "node ./scripts/embed-assets.mjs",
+    "shine:cpp:build": "node ./scripts/cmake-build.mjs"
+  }
+}

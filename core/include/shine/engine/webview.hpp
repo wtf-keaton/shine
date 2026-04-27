@@ -4,6 +4,9 @@
 #include <string_view>
 #include <memory>
 #include <functional>
+#include <optional>
+#include <span>
+#include <cstdint>
 
 namespace shine::engine {
     class Window;
@@ -22,6 +25,14 @@ namespace shine::engine {
         void SetHTML(std::string_view html);
 
         void ExecuteScript(std::string_view script);
+
+        struct AssetResponse {
+            std::string mime;
+            std::span<const std::uint8_t> bytes;
+        };
+
+        using AssetProvider = std::function<std::optional<AssetResponse>(std::string_view path)>;
+        void SetAssetProvider(AssetProvider provider);
 
         using MessageCallback = std::function<void(std::string)>;
         void OnMessageReceived(MessageCallback callback);

@@ -77,4 +77,14 @@ target_include_directories(shine_components PUBLIC
 
 target_link_libraries(shine_components PUBLIC shine_core)
 
-add_subdirectory(samples/react_dashboard)
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(_shine_default_build_samples ON)
+else()
+    set(_shine_default_build_samples OFF)
+endif()
+
+option(SHINE_BUILD_SAMPLES "Build Shine samples" ${_shine_default_build_samples})
+
+if (SHINE_BUILD_SAMPLES)
+    add_subdirectory(samples/react_dashboard)
+endif()

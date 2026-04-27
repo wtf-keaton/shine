@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible bug in Shine
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        Please include as much detail as possible — it helps us reproduce and fix issues faster.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect to happen?
+      placeholder: "When I ..., Shine ... but I expected ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the issue.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Paste relevant logs (CMake output, runtime logs, console output, etc).
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - create-shine-app (scaffolding)
+        - core (window/webview/ipc)
+        - components
+        - samples
+        - docs
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, compiler/toolchain, Node version, etc.
+      placeholder: |
+        OS:
+        Compiler/Toolchain:
+        CMake:
+        Node:
+        Shine version/commit:
+    validations:
+      required: true
+

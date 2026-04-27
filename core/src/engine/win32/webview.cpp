@@ -9,6 +9,7 @@
 #include <shlwapi.h>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 
 using namespace Microsoft::WRL;
 
@@ -64,6 +65,10 @@ namespace shine::engine {
             }
         }
 
+        void SetAssetProvider(WebView::AssetProvider provider) {
+            assetProvider_ = std::move(provider);
+        }
+
         void Resize(uint32_t width, uint32_t height) {
             if (controller_) {
                 RECT bounds = {0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
@@ -80,6 +85,7 @@ namespace shine::engine {
         ComPtr<ICoreWebView2> webview_;
         std::string pending_url_;
         std::string pending_html_;
+        WebView::AssetProvider assetProvider_;
 
         void InitializeWebView() {
             auto tempDir = std::filesystem::temp_directory_path() / "Shine_WebView_Data";
@@ -172,6 +178,42 @@ namespace shine::engine {
             if (relativePath.empty() || relativePath == L"/") relativePath = L"index.html";
             if (relativePath[0] == L'/') relativePath.erase(0, 1);
 
+            if (assetProvider_) {
+                std::string relUtf8 = WideToUtf8(relativePath);
+                std::optional<WebView::AssetResponse> asset = assetProvider_(relUtf8);
+                if (asset && !asset->bytes.empty()) {
+                    HGLOBAL hmem = GlobalAlloc(GMEM_MOVEABLE, asset->bytes.size());
+                    if (!hmem) return S_OK;
+
+                    void *dst = GlobalLock(hmem);
+                    if (!dst) {
+                        GlobalFree(hmem);
+                        return S_OK;
+                    }
+                    memcpy(dst, asset->bytes.data(), asset->bytes.size());
+                    GlobalUnlock(hmem);
+
+                    IStream *stream = nullptr;
+                    HRESULT hr = CreateStreamOnHGlobal(hmem, TRUE, &stream);
+                    if (FAILED(hr) || !stream) {
+                        GlobalFree(hmem);
+                        return S_OK;
+                    }
+
+                    std::wstring mimeW = Utf8ToWide(asset->mime.empty() ? "application/octet-stream" : asset->mime);
+                    ComPtr<ICoreWebView2WebResourceResponse> response;
+                    env_->CreateWebResourceResponse(
+                        stream,
+                        200,
+                        L"OK",
+                        (L"Content-Type: " + mimeW).c_str(),
+                        &response
+                    );
+                    args->put_Response(response.Get());
+                    return S_OK;
+                }
+            }
+
             auto assetsPath = std::filesystem::current_path() / "assets" / relativePath;
 
             if (!std::filesystem::exists(assetsPath)) {
@@ -215,6 +257,7 @@ namespace shine::engine {
     void WebView::Navigate(std::string_view url) { pImpl_->Navigate(url); }
     void WebView::SetHTML(std::string_view html) { pImpl_->SetHTML(html); }
     void WebView::ExecuteScript(std::string_view js) { pImpl_->ExecuteScript(js); }
+    void WebView::SetAssetProvider(AssetProvider provider) { pImpl_->SetAssetProvider(std::move(provider)); }
     void WebView::OnMessageReceived(MessageCallback callback) { pImpl_->onMessage_ = std::move(callback); }
     void WebView::Resize(uint32_t width, uint32_t height) { pImpl_->Resize(width, height); }
 }
