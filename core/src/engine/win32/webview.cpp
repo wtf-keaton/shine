@@ -54,7 +54,6 @@ namespace shine::engine {
             if (webview_) {
                 webview_->NavigateToString(Utf8ToWide(html).c_str());
             } else {
-                // Запоминаем HTML, если браузер еще не готов
                 pending_html_ = html;
             }
         }
@@ -152,7 +151,7 @@ namespace shine::engine {
         }
 
         void SetupResourceInterceptor() {
-            webview_->AddWebResourceRequestedFilter(L"http://shine.app/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+            webview_->AddWebResourceRequestedFilter(L"http://shine-ui.app/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
 
             EventRegistrationToken token;
             webview_->add_WebResourceRequested(
@@ -165,7 +164,7 @@ namespace shine::engine {
                         std::wstring uri(uriRaw);
                         CoTaskMemFree(uriRaw);
 
-                        if (uri.find(L"http://shine.app/") == 0) {
+                        if (uri.find(L"http://shine-ui.app/") == 0) {
                             return HandleLocalResource(uri, args);
                         }
                         return S_OK;
@@ -217,7 +216,6 @@ namespace shine::engine {
             auto assetsPath = std::filesystem::current_path() / "assets" / relativePath;
 
             if (!std::filesystem::exists(assetsPath)) {
-                // Вы увидите в консоли CLion, где именно программа ищет файл
                 std::wcerr << L"[Shine Error] File not found: " << assetsPath.wstring() << std::endl;
                 return S_OK;
             }

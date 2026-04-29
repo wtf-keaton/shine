@@ -69,6 +69,7 @@ endif()
 
 add_library(shine_components STATIC
         components/src/fs.cpp
+        components/src/window.cpp
 )
 
 target_include_directories(shine_components PUBLIC
@@ -81,10 +82,4 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(_shine_default_build_samples ON)
 else()
     set(_shine_default_build_samples OFF)
-endif()
-
-option(SHINE_BUILD_SAMPLES "Build Shine samples" ${_shine_default_build_samples})
-
-if (SHINE_BUILD_SAMPLES)
-    add_subdirectory(samples/react_dashboard)
 endif()
