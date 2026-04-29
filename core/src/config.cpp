@@ -24,6 +24,9 @@ namespace shine {
                 if (w.contains("frameless") && w["frameless"].is_boolean()) {
                     config.frameless = w["frameless"];
                 }
+                if (w.contains("resizable") && w["resizable"].is_boolean()) {
+                    config.resizable = w["resizable"];
+                }
             }
 
             if (json_data.contains("capabilities")) {

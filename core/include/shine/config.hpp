@@ -10,6 +10,7 @@ namespace shine {
         uint32_t width = 1024;
         uint32_t height = 768;
         bool frameless = false;
+        bool resizable = true;
 
         std::unordered_set<std::string> allowed_commands;
 

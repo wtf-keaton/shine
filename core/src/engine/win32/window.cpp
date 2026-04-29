@@ -26,32 +26,32 @@ namespace shine::engine {
             UnregisterClassW(className_.c_str(), GetModuleHandle(nullptr));
         }
 
-        void Show() {
+        void Show() const {
             ShowWindow(hwnd_, SW_SHOW);
             UpdateWindow(hwnd_);
         }
 
-        void Hide() { ShowWindow(hwnd_, SW_HIDE); }
+        void Hide() const { ShowWindow(hwnd_, SW_HIDE); }
 
-        void Close() { PostMessage(hwnd_, WM_CLOSE, 0, 0); }
+        void Close() const { PostMessage(hwnd_, WM_CLOSE, 0, 0); }
 
-        void SetTitle(std::string_view title) {
+        void SetTitle(std::string_view title) const {
             SetWindowTextW(hwnd_, Utf8ToWide(title).c_str());
         }
 
-        uint32_t GetWidth() const {
+        [[nodiscard]] uint32_t GetWidth() const {
             RECT rect;
             GetClientRect(hwnd_, &rect);
             return rect.right - rect.left;
         }
 
-        uint32_t GetHeight() const {
+        [[nodiscard]] uint32_t GetHeight() const {
             RECT rect;
             GetClientRect(hwnd_, &rect);
             return rect.bottom - rect.top;
         }
 
-        void* GetNativeHandle() const { return hwnd_; }
+        [[nodiscard]] void* GetNativeHandle() const { return hwnd_; }
 
         Window::ResizeCallback onResize_;
         Window::CloseCallback onClose_;
@@ -60,7 +60,7 @@ namespace shine::engine {
         WindowConfig config_;
         std::wstring className_ = L"ShineWindowClass";
 
-        void RegisterWindowClass() {
+        void RegisterWindowClass() const {
             WNDCLASSEXW wc;
             ZeroMemory(&wc, sizeof(WNDCLASSEXW));
 
@@ -72,7 +72,7 @@ namespace shine::engine {
             wc.hInstance = GetModuleHandleW(nullptr);
             wc.hIcon = LoadIconW(nullptr, reinterpret_cast<LPCWSTR>(IDI_APPLICATION));
             wc.hCursor = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
-            wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+            wc.hbrBackground = reinterpret_cast<HBRUSH>((COLOR_WINDOW + 1));
             wc.lpszMenuName = nullptr;
             wc.lpszClassName = className_.c_str();
             wc.hIconSm = LoadIconW(nullptr, reinterpret_cast<LPCWSTR>(IDI_APPLICATION));
@@ -112,11 +112,9 @@ namespace shine::engine {
         static LRESULT CALLBACK WndProcSetup(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (msg == WM_NCCREATE) {
                 auto pCreate = reinterpret_cast<CREATESTRUCT*>(lParam);
-                auto pImpl = reinterpret_cast<Impl*>(pCreate->lpCreateParams);
+                auto pImpl = static_cast<Impl*>(pCreate->lpCreateParams);
 
-                // Сохраняем указатель на Impl в память окна
                 SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pImpl));
-                // Подменяем обработчик на постоянный
                 SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&Impl::WndProcThunk));
 
                 return pImpl->HandleMessage(hwnd, msg, wParam, lParam);
@@ -136,23 +134,24 @@ namespace shine::engine {
             switch (msg) {
                 case WM_SIZE: {
                     if (onResize_) {
-                        uint32_t width = LOWORD(lParam);
-                        uint32_t height = HIWORD(lParam);
+                        const uint32_t width = LOWORD(lParam);
+                        const uint32_t height = HIWORD(lParam);
                         onResize_(width, height);
                     }
                     return 0;
                 }
                 case WM_CLOSE: {
                     if (onClose_ && !onClose_()) {
-                        return 0; // Отменяем закрытие, если коллбэк вернул false
+                        return 0;
                     }
                     DestroyWindow(hwnd);
                     return 0;
                 }
                 case WM_DESTROY: {
-                    PostQuitMessage(0); // Сигнал для остановки цикла сообщений
+                    PostQuitMessage(0);
                     return 0;
                 }
+                default: break;
             }
             return DefWindowProc(hwnd, msg, wParam, lParam);
         }

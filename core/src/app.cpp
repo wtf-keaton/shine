@@ -61,20 +61,10 @@ namespace shine {
 
         int Run() {
             mainWindow_->Show();
-            //TODO: Move it to components
-            GetRouter().AddHandler("window_drag", [&](const nlohmann::json &payload) {
-                HWND hwnd = static_cast<HWND>(GetMainWindow().GetNativeHandle());
-
-
-                ReleaseCapture();
-                SendMessage(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
-
-                return nlohmann::json({{"status", "dragging"}});
-            });
 #ifdef _DEBUG
             GetWebView().Navigate("http://localhost:5173");
 #else
-            GetWebView().Navigate("http://shine.app/index.html");
+            GetWebView().Navigate("http://shine-ui.app/index.html");
 #endif
 
 #ifdef _WIN32
