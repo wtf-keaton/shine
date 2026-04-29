@@ -1,32 +1,39 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import {useState} from 'react'
 import './App.css'
-import { invoke } from './shine-api'
+import {invoke} from '@shine-ui/api'
+
 function App() {
-  const [fileContent, setFileContent] = useState('Нажми кнопку, чтобы прочитать файл через C++')
+    const [name, setName] = useState('');
+    const [greetMsg, setGreetMsg] = useState("");
 
-  const handleReadFile = async () => {
-    try {
-      const res = await invoke('fs_read_text_file', { path: 'C:/Windows/System32/drivers/etc/hosts' })
-      setFileContent(res.content)
-    } catch (error) {
-      setFileContent('Ошибка: ' + error.message)
+    async function handleGreet() {
+        const res = await invoke('greet', {name})
+        setGreetMsg(res.result);
     }
-  }
 
-  return (
-      <div className="App">
-        <h1>Shine + React = ❤️</h1>
-        <div className="card">
-          <button onClick={handleReadFile}>Прочитать файл (Invoke)</button>
+    return (
+        <div className="App">
+            <h1>Shine + React = ❤️</h1>
+            <div className="card">
+                <form
+                    className="row"
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        handleGreet();
+                    }}
+                >
+                    <input
+                        id="greet-input"
+                        onChange={(e) => setName(e.currentTarget.value)}
+                        placeholder="Enter a name..."
+                    />
+                    <button type="submit">Greet</button>
+                </form>
+
+                <p>{greetMsg}</p>
+            </div>
         </div>
-        <pre style={{ textAlign: 'left', background: '#222', padding: '15px', borderRadius: '8px', overflowX: 'auto' }}>
-        {fileContent}
-      </pre>
-      </div>
-  )
+    )
 }
 
 export default App
