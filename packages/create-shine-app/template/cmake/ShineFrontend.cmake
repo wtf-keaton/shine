@@ -4,9 +4,14 @@ function(shine_attach_frontend TARGET_NAME)
     set(GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generated")
     set(OUTPUT_HEADER "${GENERATED_DIR}/embedded_assets.hpp")
 
-    find_program(NPM_EXECUTABLE NAMES npm npm.cmd REQUIRED)
+    if(WIN32)
+        find_program(NPM_EXECUTABLE NAMES npm.cmd npm REQUIRED)
+    else()
+        find_program(NPM_EXECUTABLE NAMES npm REQUIRED)
+    endif()
 
     message(STATUS "[Shine] Checking frontend dependencies for target: ${TARGET_NAME}")
+    message(STATUS "[Shine] Npm Executable: ${NPM_EXECUTABLE}")
 
     execute_process(
             COMMAND ${NPM_EXECUTABLE} install
@@ -24,33 +29,54 @@ function(shine_attach_frontend TARGET_NAME)
 
         add_custom_command(
                 OUTPUT "${OUTPUT_HEADER}"
-                COMMAND ${NPM_EXECUTABLE} run build
-                WORKING_DIRECTORY ${FRONTEND_DIR}
+                COMMAND "${NPM_EXECUTABLE}" --prefix "${FRONTEND_DIR}" run build
                 COMMAND node "${SCRIPTS_DIR}/embed-assets.mjs"
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
                 COMMENT "[Shine] Compiling React Frontend and packing assets..."
         )
 
         set(ASSETS_TARGET "${TARGET_NAME}_Assets")
         add_custom_target(${ASSETS_TARGET} DEPENDS "${OUTPUT_HEADER}")
-
         add_dependencies(${TARGET_NAME} ${ASSETS_TARGET})
 
     else()
-        message(STATUS "[Shine] Debug mode: Starting Vite dev server in background...")
+        message(STATUS "[Shine] Debug mode: Verifying Vite dev server status...")
 
-        if(WIN32)
-            execute_process(
-                    COMMAND cmd /c start /b ${NPM_EXECUTABLE} run dev
-                    WORKING_DIRECTORY ${FRONTEND_DIR}
-            )
-        else()
-            execute_process(
-                    COMMAND ${NPM_EXECUTABLE} run dev &
-                    WORKING_DIRECTORY ${FRONTEND_DIR}
-            )
-        endif()
+        set(ASSETS_TARGET "${TARGET_NAME}_DevServer")
+
+        add_custom_target(${ASSETS_TARGET}
+                COMMAND node "${SCRIPTS_DIR}/dev-server.mjs" "${NPM_EXECUTABLE}"
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                COMMENT "[Shine] Checking and managing Vite dev server..."
+        )
+
+        add_dependencies(${TARGET_NAME} ${ASSETS_TARGET})
+
     endif()
+
+    target_include_directories(${TARGET_NAME} PRIVATE "${GENERATED_DIR}")
+endfunction()
+
+function(shine_embed_config TARGET_NAME CONFIG_FILE)
+    set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    set(OUTPUT_HEADER "${GENERATED_DIR}/shine_config.hpp")
+
+    file(MAKE_DIRECTORY "${GENERATED_DIR}")
+
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CONFIG_FILE}")
+
+    file(READ "${CONFIG_FILE}" JSON_CONTENT)
+
+    set(CPP_CODE
+            "#pragma once
+namespace shine::embedded {
+    constexpr const char* kConfig = R\"SHINE_JSON(
+${JSON_CONTENT}
+)SHINE_JSON\";
+}
+")
+
+    file(WRITE "${OUTPUT_HEADER}" "${CPP_CODE}")
 
     target_include_directories(${TARGET_NAME} PRIVATE "${GENERATED_DIR}")
 endfunction()

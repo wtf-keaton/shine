@@ -4,18 +4,23 @@
 #include <iostream>
 
 namespace shine {
-    AppConfig AppConfig::Load(const std::string& filepath) {
+    AppConfig AppConfig::Load(const std::string& configStr) {
         AppConfig config;
 
-        std::ifstream ifs(filepath);
+#ifdef _DEBUG
+        std::ifstream ifs(configStr);
         if (!ifs.is_open()) {
-            std::cerr << "Could not open file " << filepath << std::endl;
+            std::cerr << "Could not open file " << configStr << std::endl;
             return config;
         }
+#endif
 
         try {
+#ifdef _DEBUG
             auto json_data = nlohmann::json::parse(ifs);
-
+#else
+            auto json_data = nlohmann::json::parse(configStr);
+#endif
             if (json_data.contains("window")) {
                 auto& w = json_data["window"];
                 if (w.contains("title")) config.title = w["title"];

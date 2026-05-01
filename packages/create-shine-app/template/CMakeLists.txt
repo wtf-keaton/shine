@@ -14,5 +14,13 @@ add_subdirectory(shine)
 add_executable({{PROJECT_NAME}} src/main.cpp)
 
 target_link_libraries({{PROJECT_NAME}} PRIVATE shine_core shine_components)
+if (WIN32)
+    set_property(TARGET ${TARGET_NAME} PROPERTY WIN32_EXECUTABLE TRUE)
+    if(MSVC)
+        target_link_options({{PROJECT_NAME}} PRIVATE "/SUBSYSTEM:WINDOWS" "/ENTRY:mainCRTStartup")
+    endif()
+endif ()
+
+shine_embed_config(demo-shine-app "${CMAKE_CURRENT_SOURCE_DIR}/shine.conf.json")
 
 shine_attach_frontend({{PROJECT_NAME}})

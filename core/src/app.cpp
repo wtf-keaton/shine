@@ -11,7 +11,7 @@
 namespace shine {
     class App::Impl {
     public:
-        Impl(const std::string &config_path) {
+        Impl(const std::string &config) {
 #ifdef _WIN32
             HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
             if (FAILED(hr)) {
@@ -19,7 +19,7 @@ namespace shine {
             }
 #endif
 
-            AppConfig appConfig = AppConfig::Load(config_path);
+            AppConfig appConfig = AppConfig::Load(config);
 
             router_.SetAllowedCommands(appConfig.allowed_commands);
 
@@ -62,7 +62,7 @@ namespace shine {
         int Run() const {
             mainWindow_->Show();
 #ifdef _DEBUG
-            GetWebView().Navigate("http://localhost:5173");
+            GetWebView().Navigate("http://localhost:1745");
 #else
             GetWebView().Navigate("http://shine-ui.app/index.html");
 #endif

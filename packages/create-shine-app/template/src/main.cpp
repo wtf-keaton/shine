@@ -9,6 +9,7 @@
 
 #ifndef _DEBUG
 #include "embedded_assets.hpp"
+#include <shine_config.hpp>
 #endif
 
 SHINE_COMMAND(greet) {
@@ -18,11 +19,12 @@ SHINE_COMMAND(greet) {
 }
 
 int main() {
-    std::cout << "Starting Shine Application" << std::endl;
-
     try {
+#ifndef _DEBUG
+        shine::App app(shine::embedded::kConfig);
+#else
         shine::App app;
-
+#endif
 #ifndef _DEBUG
         app.GetWebView().SetAssetProvider([](std::string_view relPath)
         -> std::optional<shine::engine::WebView::AssetResponse> {

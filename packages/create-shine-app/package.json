@@ -6,6 +6,14 @@
   "bin": {
     "create-shine-app": "index.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wtf-keaton/shine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wtf-keaton/shine/issues"
+  },
+  "homepage": "https://github.com/wtf-keaton/shine#readme",
   "files": [
     "index.js",
     "template"
