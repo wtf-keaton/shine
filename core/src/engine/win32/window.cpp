@@ -4,12 +4,11 @@
 
 static std::wstring Utf8ToWide(std::string_view utf8) {
     if (utf8.empty()) return {};
-    int size = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int)utf8.size(), nullptr, 0);
+    int size = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int) utf8.size(), nullptr, 0);
     std::wstring result(size, 0);
-    MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int)utf8.size(), &result[0], size);
+    MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int) utf8.size(), &result[0], size);
     return result;
 }
-
 
 namespace shine::engine {
     class Window::Impl {
@@ -35,7 +34,7 @@ namespace shine::engine {
 
         void Close() const { PostMessage(hwnd_, WM_CLOSE, 0, 0); }
 
-        void SetTitle(std::string_view title) const {
+        void SetTitle(const std::string_view title) const {
             SetWindowTextW(hwnd_, Utf8ToWide(title).c_str());
         }
 
@@ -53,8 +52,8 @@ namespace shine::engine {
 
         [[nodiscard]] void* GetNativeHandle() const { return hwnd_; }
 
-        Window::ResizeCallback onResize_;
-        Window::CloseCallback onClose_;
+        ResizeCallback onResize_;
+        CloseCallback onClose_;
     private:
         HWND hwnd_ = nullptr;
         WindowConfig config_;
@@ -130,7 +129,7 @@ namespace shine::engine {
             return DefWindowProc(hwnd, msg, wParam, lParam);
         }
 
-        LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+        LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) const {
             switch (msg) {
                 case WM_SIZE: {
                     if (onResize_) {
