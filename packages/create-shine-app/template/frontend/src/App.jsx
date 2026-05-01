@@ -24,9 +24,7 @@ function App() {
     return (
         <main className="container">
             <div className="hero">
-                <h1 className="title">
-                    Welcome to <span className="highlight">Shine</span>
-                </h1>
+                <h1 className="title">Welcome to Shine</h1>
                 <p className="subtitle">High-Performance C++ & React Framework</p>
             </div>
 
@@ -56,7 +54,7 @@ function App() {
             </div>
 
             <footer className="footer">
-                Edit <code>src/App.jsx</code> to test Hot Module Replacement
+                Edit <code>src/App.jsx</code> to test HMR
             </footer>
         </main>
     );

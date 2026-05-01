@@ -1,12 +1,11 @@
 :root {
-  --bg-color: #0f172a;
-  --card-bg: rgba(30, 41, 59, 0.7);
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --accent-color: #0ea5e9;
-  --accent-glow: rgba(14, 165, 233, 0.5);
-  --accent-hover: #38bdf8;
-  --border-color: rgba(255, 255, 255, 0.1);
+  --bg-color: #0a0a0a;
+  --card-bg: #121212;
+  --text-primary: #ffffff;
+  --text-secondary: #888888;
+  --border-color: #2a2a2a;
+  --accent-color: #ffffff;
+  --accent-bg: #1a1a1a;
 }
 
 * {
@@ -18,15 +17,18 @@
 body {
   background-color: var(--bg-color);
   color: var(--text-primary);
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
+}
+
+#root {
   min-height: 100vh;
+  width: 100vw;
   display: flex;
-  place-items: center;
   justify-content: center;
-  /* Легкий градиентный фон для глубины */
-  background-image: radial-gradient(circle at 50% -20%, #1e293b, var(--bg-color));
+  align-items: center;
+  text-align: center;
 }
 
 .container {
@@ -35,113 +37,93 @@ body {
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  max-width: 600px;
+  max-width: 400px; /* Сделали контейнер поуже для компактности */
   width: 100%;
 }
 
 .hero {
-  text-align: center;
-  margin-bottom: 2.5rem;
+  margin-bottom: 2rem;
 }
 
 .title {
-  font-size: 3.5rem;
-  font-weight: 800;
-  letter-spacing: -0.05em;
+  font-size: 2.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   margin-bottom: 0.5rem;
 }
 
-.highlight {
-  /* Тот самый эффект "Сияния" (Shine) */
-  background: linear-gradient(135deg, #38bdf8, #a855f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 0 1rem var(--accent-glow));
-}
-
 .subtitle {
-  font-size: 1.1rem;
+  font-size: 1rem;
   color: var(--text-secondary);
 }
 
-/* Эффект матового стекла для карточки */
 .card {
   background: var(--card-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-color);
-  border-radius: 16px;
+  border-radius: 8px;
   padding: 2rem;
   width: 100%;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Центрируем содержимое карточки */
 }
 
 .greet-form {
   display: flex;
-  gap: 12px;
-  margin-bottom: 1.5rem;
+  flex-direction: column; /* Выстраиваем инпут и кнопку друг под другом */
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
 }
 
 input {
-  flex: 1;
-  background: rgba(15, 23, 42, 0.5);
+  width: 100%;
+  background: transparent;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 0.8rem 1rem;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
   color: var(--text-primary);
   font-size: 1rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
   outline: none;
+  text-align: center; /* Центрируем вводимый текст */
+  transition: border-color 0.2s;
 }
 
 input:focus {
-  border-color: var(--accent-color);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+  border-color: var(--text-secondary);
 }
 
 button {
-  background: var(--accent-color);
-  color: #fff;
+  width: 100%;
+  background: var(--text-primary);
+  color: var(--bg-color);
   border: none;
-  border-radius: 8px;
-  padding: 0 1.5rem;
+  border-radius: 6px;
+  padding: 0.75rem 1.5rem;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
-  box-shadow: 0 4px 14px var(--accent-glow);
+  transition: opacity 0.2s;
 }
 
 button:hover:not(:disabled) {
-  background: var(--accent-hover);
-  transform: translateY(-1px);
-}
-
-button:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: none;
+  opacity: 0.8;
 }
 
 button:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
-/* Плавное появление сообщения */
 .message-box {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  padding: 1rem;
-  text-align: center;
-  font-weight: 500;
+  margin-top: 1.5rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateY(5px);
   transition: all 0.3s ease;
   visibility: hidden;
   height: 0;
-  overflow: hidden;
 }
 
 .message-box.visible {
@@ -154,12 +136,12 @@ button:disabled {
 .footer {
   margin-top: 3rem;
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .footer code {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--accent-bg);
   padding: 0.2rem 0.4rem;
   border-radius: 4px;
-  color: var(--accent-hover);
+  border: 1px solid var(--border-color);
 }
