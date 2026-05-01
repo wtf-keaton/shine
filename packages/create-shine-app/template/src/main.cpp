@@ -15,7 +15,7 @@
 SHINE_COMMAND(greet) {
     std::string name_str = args["name"];
 
-    return nlohmann::json{{"result", name_str}};
+    return std::format("Hello, {}", name_str);
 }
 
 int main() {

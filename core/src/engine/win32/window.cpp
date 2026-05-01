@@ -13,7 +13,7 @@ static std::wstring Utf8ToWide(std::string_view utf8) {
 namespace shine::engine {
     class Window::Impl {
     public:
-        Impl(const WindowConfig& config) : config_(config) {
+        Impl(const WindowConfig &config) : config_(config) {
             RegisterWindowClass();
             CreateWindowInstance();
         }
@@ -32,7 +32,9 @@ namespace shine::engine {
 
         void Hide() const { ShowWindow(hwnd_, SW_HIDE); }
 
-        void Close() const { PostMessage(hwnd_, WM_CLOSE, 0, 0); }
+        void Close() const {
+            PostMessage(hwnd_, WM_CLOSE, 0, 0);
+        }
 
         void SetTitle(const std::string_view title) const {
             SetWindowTextW(hwnd_, Utf8ToWide(title).c_str());
@@ -50,10 +52,11 @@ namespace shine::engine {
             return rect.bottom - rect.top;
         }
 
-        [[nodiscard]] void* GetNativeHandle() const { return hwnd_; }
+        [[nodiscard]] void *GetNativeHandle() const { return hwnd_; }
 
         ResizeCallback onResize_;
         CloseCallback onClose_;
+
     private:
         HWND hwnd_ = nullptr;
         WindowConfig config_;
@@ -79,7 +82,8 @@ namespace shine::engine {
             if (!RegisterClassExW(&wc)) {
                 DWORD err = GetLastError();
                 if (err != ERROR_CLASS_ALREADY_EXISTS) {
-                    throw std::runtime_error("Failed to register Win32 window class. System Error Code: " + std::to_string(err));
+                    throw std::runtime_error(
+                        "Failed to register Win32 window class. System Error Code: " + std::to_string(err));
                 }
             }
         }
@@ -110,23 +114,23 @@ namespace shine::engine {
 
         static LRESULT CALLBACK WndProcSetup(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (msg == WM_NCCREATE) {
-                auto pCreate = reinterpret_cast<CREATESTRUCT*>(lParam);
-                auto pImpl = static_cast<Impl*>(pCreate->lpCreateParams);
+                auto pCreate = reinterpret_cast<CREATESTRUCT *>(lParam);
+                auto pImpl = static_cast<Impl *>(pCreate->lpCreateParams);
 
                 SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pImpl));
                 SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&Impl::WndProcThunk));
 
                 return pImpl->HandleMessage(hwnd, msg, wParam, lParam);
             }
-            return DefWindowProc(hwnd, msg, wParam, lParam);
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
 
         static LRESULT CALLBACK WndProcThunk(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-            auto pImpl = reinterpret_cast<Impl*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+            auto pImpl = reinterpret_cast<Impl *>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
             if (pImpl) {
                 return pImpl->HandleMessage(hwnd, msg, wParam, lParam);
             }
-            return DefWindowProc(hwnd, msg, wParam, lParam);
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
 
         LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) const {
@@ -152,14 +156,18 @@ namespace shine::engine {
                 }
                 default: break;
             }
-            return DefWindowProc(hwnd, msg, wParam, lParam);
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
     };
 
-    Window::Window(const WindowConfig& config) : pImpl_(std::make_unique<Impl>(config)) {}
+    Window::Window(const WindowConfig &config) : pImpl_(std::make_unique<Impl>(config)) {
+    }
+
     Window::~Window() = default;
-    Window::Window(Window&&) noexcept = default;
-    Window& Window::operator=(Window&&) noexcept = default;
+
+    Window::Window(Window &&) noexcept = default;
+
+    Window &Window::operator=(Window &&) noexcept = default;
 
     void Window::Show() { pImpl_->Show(); }
     void Window::Hide() { pImpl_->Hide(); }
@@ -169,5 +177,5 @@ namespace shine::engine {
     uint32_t Window::GetHeight() const { return pImpl_->GetHeight(); }
     void Window::OnResize(ResizeCallback callback) { pImpl_->onResize_ = std::move(callback); }
     void Window::OnClose(CloseCallback callback) { pImpl_->onClose_ = std::move(callback); }
-    void* Window::GetNativeHandle() const { return pImpl_->GetNativeHandle(); }
+    void *Window::GetNativeHandle() const { return pImpl_->GetNativeHandle(); }
 }

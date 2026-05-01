@@ -7,7 +7,7 @@
 #include <nlohmann/json.hpp>
 
 namespace shine::ipc {
-    using CommandHandler = std::function<nlohmann::json(const nlohmann::json& payload)>;
+    using CommandHandler = std::function<std::string(const nlohmann::json& payload)>;
 
     struct HandlerRegistration {
         const char* name;

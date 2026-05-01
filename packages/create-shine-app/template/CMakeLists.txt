@@ -21,6 +21,6 @@ if (WIN32)
     endif()
 endif ()
 
-shine_embed_config(demo-shine-app "${CMAKE_CURRENT_SOURCE_DIR}/shine.conf.json")
+shine_embed_config({{PROJECT_NAME}} "${CMAKE_CURRENT_SOURCE_DIR}/shine.conf.json")
 
 shine_attach_frontend({{PROJECT_NAME}})
