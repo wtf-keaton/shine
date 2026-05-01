@@ -23,9 +23,9 @@ static std::wstring Utf8ToWide(std::string_view utf8) {
 
 static std::string WideToUtf8(const std::wstring &wide) {
     if (wide.empty()) return {};
-    int size = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    int size = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), (int)wide.size(), nullptr, 0, nullptr, nullptr);
     std::string result(size, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, &result[0], size, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), (int)wide.size(), &result[0], size, nullptr, nullptr);
     return result;
 }
 
@@ -150,7 +150,7 @@ namespace shine::engine {
                     }).Get(), &token);
         }
 
-        void SetupResourceInterceptor() {
+        void SetupResourceInterceptor() const {
             webview_->AddWebResourceRequestedFilter(L"http://shine-ui.app/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
 
             EventRegistrationToken token;
@@ -171,8 +171,12 @@ namespace shine::engine {
                     }).Get(), &token);
         }
 
-        HRESULT HandleLocalResource(const std::wstring &uri, ICoreWebView2WebResourceRequestedEventArgs *args) {
-            std::wstring relativePath = uri.substr(17);
+        HRESULT HandleLocalResource(const std::wstring &uri, ICoreWebView2WebResourceRequestedEventArgs *args) const {
+            const std::wstring prefix = L"http://shine-ui.app/";
+
+            if (uri.find(prefix) != 0) return S_OK;
+
+            std::wstring relativePath = uri.substr(prefix.length());
 
             if (relativePath.empty() || relativePath == L"/") relativePath = L"index.html";
             if (relativePath[0] == L'/') relativePath.erase(0, 1);
@@ -192,7 +196,7 @@ namespace shine::engine {
                     memcpy(dst, asset->bytes.data(), asset->bytes.size());
                     GlobalUnlock(hmem);
 
-                    IStream *stream = nullptr;
+                    ComPtr<IStream> stream;
                     HRESULT hr = CreateStreamOnHGlobal(hmem, TRUE, &stream);
                     if (FAILED(hr) || !stream) {
                         GlobalFree(hmem);
@@ -202,7 +206,7 @@ namespace shine::engine {
                     std::wstring mimeW = Utf8ToWide(asset->mime.empty() ? "application/octet-stream" : asset->mime);
                     ComPtr<ICoreWebView2WebResourceResponse> response;
                     env_->CreateWebResourceResponse(
-                        stream,
+                        stream.Get(),
                         200,
                         L"OK",
                         (L"Content-Type: " + mimeW).c_str(),

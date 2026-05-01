@@ -1,0 +1,8 @@
+node-modules/
+build/
+.npmrc
+.github
+npm
+.eslintrc
+.prettierignore
+*.node

@@ -28,22 +28,22 @@ namespace shine {
             winConfig.width = appConfig.width;
             winConfig.height = appConfig.height;
             winConfig.frameless = appConfig.frameless;
-            winConfig.resizable = true;
+            winConfig.resizable = appConfig.resizable;
 
             mainWindow_ = std::make_unique<engine::Window>(winConfig);
 
-            mainWindow_->OnResize([this](uint32_t width, uint32_t height) {
+            mainWindow_->OnResize([this](const uint32_t width, const uint32_t height) {
                 webView_->Resize(width, height);
             });
 
-            mainWindow_->OnClose([]() {
+            mainWindow_->OnClose([] {
                 return true;
             });
 
             webView_ = std::make_unique<engine::WebView>(*mainWindow_);
 
             webView_->OnMessageReceived([this](const std::string &msg) {
-                std::string js_response = router_.Route(msg);
+                const std::string js_response = router_.Route(msg);
 
                 if (!js_response.empty()) {
                     webView_->ExecuteScript(js_response);
@@ -59,7 +59,7 @@ namespace shine {
 #endif
         }
 
-        int Run() {
+        int Run() const {
             mainWindow_->Show();
 #ifdef _DEBUG
             GetWebView().Navigate("http://localhost:5173");
@@ -68,7 +68,7 @@ namespace shine {
 #endif
 
 #ifdef _WIN32
-            MSG msg = {0};
+            MSG msg = {nullptr};
             while (GetMessageW(&msg, nullptr, 0, 0)) {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
@@ -81,11 +81,11 @@ namespace shine {
 #endif
         }
 
-        engine::Window &GetMainWindow() {
+        [[nodiscard]] engine::Window &GetMainWindow() const {
             return *mainWindow_;
         }
 
-        engine::WebView &GetWebView() { return *webView_; }
+        [[nodiscard]] engine::WebView &GetWebView() const { return *webView_; }
 
         ipc::Router &GetRouter() { return router_; }
 
@@ -100,8 +100,8 @@ namespace shine {
 
     App::~App() = default;
 
-    int App::Run() { return pImpl_->Run(); }
-    engine::Window &App::GetMainWindow() { return pImpl_->GetMainWindow(); }
-    engine::WebView &App::GetWebView() { return pImpl_->GetWebView(); }
-    ipc::Router &App::GetRouter() { return pImpl_->GetRouter(); }
+    int App::Run() const { return pImpl_->Run(); }
+    engine::Window &App::GetMainWindow() const { return pImpl_->GetMainWindow(); }
+    engine::WebView &App::GetWebView() const { return pImpl_->GetWebView(); }
+    ipc::Router &App::GetRouter() const { return pImpl_->GetRouter(); }
 }

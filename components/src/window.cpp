@@ -8,13 +8,18 @@
 namespace shine::components {
     void Window::Init(App &app) {
         app.GetRouter().AddHandler("window_drag", [&](const nlohmann::json &payload) {
-            HWND hwnd = static_cast<HWND>(app.GetMainWindow().GetNativeHandle());
-
+            const auto hwnd = static_cast<HWND>(app.GetMainWindow().GetNativeHandle());
 
             ReleaseCapture();
             SendMessage(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
 
             return nlohmann::json({{"status", "dragging"}});
+        });
+
+        app.GetRouter().AddHandler("close", [&](const nlohmann::json &payload) {
+            app.GetMainWindow().Close();
+
+            return nlohmann::json({{"status", "closed"}});
         });
     };
 }

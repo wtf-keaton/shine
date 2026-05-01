@@ -4,6 +4,7 @@
 namespace shine::ipc {
     void Router::AddHandler(const std::string &cmd, CommandHandler handler) {
         handlers_[cmd] = std::move(handler);
+        allowedCommands_.insert(cmd);
     }
 
     void Router::AddHandlers(const std::initializer_list<HandlerRegistration> handlers) {

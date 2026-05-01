@@ -19,11 +19,11 @@ namespace shine {
         App(const App&) = delete;
         App& operator=(const App&) = delete;
 
-        int Run();
+        int Run() const;
 
-        engine::Window& GetMainWindow();
-        engine::WebView& GetWebView();
-        ipc::Router& GetRouter();
+        engine::Window& GetMainWindow() const;
+        engine::WebView& GetWebView() const;
+        ipc::Router& GetRouter() const;
 
         template<typename T, typename... Args>
         void RegisterComponent(Args&&... args) {

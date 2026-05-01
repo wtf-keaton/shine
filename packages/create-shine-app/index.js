@@ -9,13 +9,11 @@ import prompts from 'prompts';
 import { blue, green, reset, bold } from 'kolorist';
 import AdmZip from 'adm-zip';
 
-// Resolve current script directory (ESM-friendly __dirname).
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function init() {
     console.log(`\n✨ Welcome to the ${bold(blue('Shine Framework'))} app generator!\n`);
 
-    // 1) Collect project name
     const response = await prompts([
         {
             type: 'text',
@@ -127,7 +125,7 @@ async function init() {
     }
 
     async function downloadAndExtractShine() {
-        const DEFAULT_ZIP_URL = 'https://github.com/wtf-keaton/shine/releases/download/v1.0.1/shine-framework-v1.0.1.zip';
+        const DEFAULT_ZIP_URL = 'https://github.com/wtf-keaton/shine/releases/latest/download/shine-framework.zip';
         const zipUrl = (process.env.SHINE_ZIP_URL || DEFAULT_ZIP_URL).trim();
 
         const headers = {

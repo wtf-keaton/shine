@@ -7,3 +7,4 @@ docs/             export-ignore
 .github/          export-ignore
 .idea/            export-ignore
 .vscode/          export-ignore
+vcpkg.json        export-ignore

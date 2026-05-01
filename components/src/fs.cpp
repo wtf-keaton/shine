@@ -14,7 +14,6 @@ namespace shine::components {
             std::string path_str = payload["path"];
             std::filesystem::path file_path(path_str);
 
-
             if (!std::filesystem::exists(file_path)) {
                 return nlohmann::json({
                     {"error", "File does not exist: " + path_str}
