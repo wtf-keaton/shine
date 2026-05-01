@@ -1,6 +1,5 @@
 samples/          export-ignore
-sdk/              export-ignore
-create-shine-app/ export-ignore
+packages/         export-ignore
 scripts/          export-ignore
 docs/             export-ignore
 
