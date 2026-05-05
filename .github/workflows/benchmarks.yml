@@ -53,8 +53,8 @@ jobs:
           Remove-Item -Path "$env:TEMP\Shine_Bench_WebView_Data" -Recurse -Force -ErrorAction SilentlyContinue
           Get-Process -Name "msedgewebview2" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 2
-          & "build\benchmarks\shine_benchmarks.exe" --json > benchmark-results.json
-          cat benchmark-results.json
+          & "${{ github.workspace }}\build\benchmarks\shine_benchmarks.exe" --json | Out-File -FilePath benchmark-results.json -Encoding utf8
+          Get-Content benchmark-results.json
 
       - name: Upload Results
         uses: actions/upload-artifact@v4
