@@ -1,0 +1,76 @@
+name: Benchmarks
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+    inputs:
+      compare:
+        description: 'Compare with baseline'
+        type: boolean
+        default: false
+
+env:
+  VCPKG_DEFAULT_TRIPLET: x64-windows-static
+  BUILD_TYPE: Release
+
+jobs:
+  benchmark:
+    name: Memory & Performance
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            ${{ github.workspace }}/vcpkg
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-
+
+      - name: Kill stale WebView2
+        run: Get-Process -Name "msedgewebview2" -ErrorAction SilentlyContinue | Stop-Process -Force
+
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+
+      - name: Build Benchmarks
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target shine_benchmarks
+
+      - name: Run Benchmarks
+        run: |
+          Remove-Item -Path "$env:TEMP\Shine_Bench_WebView_Data" -Recurse -Force -ErrorAction SilentlyContinue
+          Get-Process -Name "msedgewebview2" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          & "build\benchmarks\shine_benchmarks.exe" --json > benchmark-results.json
+          cat benchmark-results.json
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ github.run_number }}
+          path: benchmark-results.json
+          retention-days: 90
+
+      - name: Check Regressions
+        if: ${{ github.event.inputs.compare == 'true' }}
+        run: |
+          $json = Get-Content benchmark-results.json | ConvertFrom-Json
+          foreach ($b in $json.benchmarks) {
+            if ($b.status -ne "ok") {
+              Write-Host "::error::Benchmark failed: $($b.name)"
+              exit 1
+            }
+            Write-Host "$($b.name): $($b.private_bytes_mb) MB private, $($b.startup_time_ms) ms startup"
+          }

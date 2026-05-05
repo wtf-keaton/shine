@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  VCPKG_DEFAULT_TRIPLET: x64-windows-static
+  BUILD_TYPE: Release
+
+jobs:
+  test:
+    name: Unit Tests (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            ${{ github.workspace }}/vcpkg
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-
+
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DSHINE_ENABLE_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target shine_unit_tests
+
+      - name: Run Tests
+        run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure --output-junit build/test-results.xml
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: build/test-results.xml
+          retention-days: 30
+
+  format-check:
+    name: Code Style
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for CRLF
+        run: |
+          if git ls-files --eol | grep -q 'w/crlf'; then
+            echo "::warning::CRLF line endings detected. Consider using LF for C++ files."
+            git ls-files --eol | grep 'w/crlf' || true
+          else
+            echo "All files use LF line endings."
+          fi
+
+      - name: Validate vcpkg.json
+        run: |
+          if command -v python3 &> /dev/null; then
+            python3 -m json.tool vcpkg.json > /dev/null
+            echo "vcpkg.json is valid JSON"
+          fi

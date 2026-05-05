@@ -9,6 +9,9 @@
     {
       "name": "webview2",
       "platform": "windows"
+    },
+    {
+      "name": "gtest"
     }
   ]
 }

@@ -56,6 +56,12 @@ target_include_directories(shine_core
 
 target_link_libraries(shine_core PUBLIC nlohmann_json::nlohmann_json)
 
+if (MSVC)
+    set_target_properties(shine_core PROPERTIES
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    )
+endif()
+
 if (WIN32)
     target_link_libraries(shine_core PRIVATE
             unofficial::webview2::webview2
@@ -85,4 +91,85 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(_shine_default_build_samples ON)
 else()
     set(_shine_default_build_samples OFF)
+endif()
+
+option(SHINE_ENABLE_TESTS "Build unit tests" ON)
+
+if (SHINE_ENABLE_TESTS)
+    enable_testing()
+    find_package(GTest CONFIG REQUIRED)
+
+    set(SHINE_UNIT_TESTS
+            tests/unit/test_ipc_router.cpp
+            tests/unit/test_config.cpp
+    )
+
+    add_executable(shine_unit_tests ${SHINE_UNIT_TESTS})
+
+    target_include_directories(shine_unit_tests
+            PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/core/include
+    )
+
+    target_link_libraries(shine_unit_tests PRIVATE
+            shine_core
+            GTest::gtest_main
+    )
+
+    if (MSVC)
+        set_target_properties(shine_unit_tests PROPERTIES
+                MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+        target_compile_options(shine_unit_tests PRIVATE /W4)
+    endif()
+
+    include(GoogleTest)
+    add_test(
+            NAME shine_unit_tests
+            COMMAND shine_unit_tests
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+
+    set_target_properties(shine_unit_tests PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
+    add_custom_target(run_tests
+            COMMAND shine_unit_tests
+            DEPENDS shine_unit_tests
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            COMMENT "Running Shine unit tests"
+    )
+endif()
+
+set(SHINE_BENCHMARK_SOURCES
+        benchmarks/src/memory_profiler.cpp
+        benchmarks/src/benchmarks.cpp
+)
+
+add_executable(shine_benchmarks ${SHINE_BENCHMARK_SOURCES})
+
+target_include_directories(shine_benchmarks
+        PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/core/include>
+)
+
+target_link_libraries(shine_benchmarks PRIVATE
+        shine_core
+        unofficial::webview2::webview2
+        user32 ole32 advapi32 shlwapi psapi
+)
+
+set_target_properties(shine_benchmarks PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+)
+
+if (MSVC)
+    set_target_properties(shine_benchmarks PROPERTIES
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    )
+    target_compile_options(shine_benchmarks PRIVATE /W4)
+else()
+    target_compile_options(shine_benchmarks PRIVATE -Wall -Wextra -Wpedantic)
 endif()
