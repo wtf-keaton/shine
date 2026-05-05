@@ -39,6 +39,8 @@ namespace shine::engine {
 
         void Resize(uint32_t width, uint32_t height);
 
+        void CollectGarbage();
+
     private:
         class Impl;
         std::unique_ptr<Impl> pImpl_;

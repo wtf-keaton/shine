@@ -4,14 +4,68 @@
 #include <Windows.h>
 #include <wrl.h>
 #include <wrl/event.h>
+#include <wrl/implements.h>
 #include <WebView2.h>
 #include <stdexcept>
 #include <shlwapi.h>
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <thread>
 
 using namespace Microsoft::WRL;
+
+class EnvironmentOptions : public RuntimeClass<RuntimeClassFlags<ClassicCom>, ICoreWebView2EnvironmentOptions> {
+public:
+    EnvironmentOptions() = default;
+
+    HRESULT STDMETHODCALLTYPE get_AdditionalBrowserArguments(LPWSTR* value) override {
+        if (!value) return E_POINTER;
+        auto str = additionalArgs_.c_str();
+        size_t len = wcslen(str) + 1;
+        *value = static_cast<LPWSTR>(CoTaskMemAlloc(len * sizeof(wchar_t)));
+        if (*value) wcscpy_s(*value, len, str);
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE put_AdditionalBrowserArguments(LPCWSTR value) override {
+        additionalArgs_ = value ? value : L"";
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE get_TargetCompatibleBrowserVersion(LPWSTR* value) override {
+        if (!value) return E_POINTER;
+        *value = nullptr;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE put_TargetCompatibleBrowserVersion(LPCWSTR) override {
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE get_AllowSingleSignOnUsingOSPrimaryAccount(BOOL* value) override {
+        if (!value) return E_POINTER;
+        *value = FALSE;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE put_AllowSingleSignOnUsingOSPrimaryAccount(BOOL) override {
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE get_Language(LPWSTR* value) override {
+        if (!value) return E_POINTER;
+        *value = nullptr;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE put_Language(LPCWSTR) override {
+        return S_OK;
+    }
+
+private:
+    std::wstring additionalArgs_;
+};
 
 static std::wstring Utf8ToWide(std::string_view utf8) {
     if (utf8.empty()) return {};
@@ -75,6 +129,16 @@ namespace shine::engine {
             }
         }
 
+        void ForceGarbageCollection() {
+            if (!webview_) return;
+
+            webview_->CallDevToolsProtocolMethod(
+                L"Runtime.collectGarbage",
+                L"{}",
+                Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
+                    [](HRESULT, LPCWSTR) -> HRESULT { return S_OK; }).Get());
+        }
+
         WebView::MessageCallback onMessage_;
 
     private:
@@ -90,46 +154,94 @@ namespace shine::engine {
             auto tempDir = std::filesystem::temp_directory_path() / "Shine_WebView_Data";
             std::wstring userDataFolder = tempDir.wstring();
 
-            CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), nullptr,
-                                                     Callback<
-                                                         ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                                                         [this](HRESULT result,
-                                                                ICoreWebView2Environment *env) -> HRESULT {
-                                                             if (FAILED(result)) return result;
+            auto envOptions = Make<EnvironmentOptions>();
+            envOptions->put_AdditionalBrowserArguments(
+                    L"--disable-background-networking "
+                    L"--disable-default-apps "
+                    L"--disable-sync "
+                    L"--no-first-run "
+                    L"--disable-component-update "
+                    L"--disable-domain-reliability "
+                    L"--disable-breakpad "
+                    L"--disable-hang-monitor "
+                    L"--disable-infobars "
+                    L"--disable-features=OptimizationHints,MediaRouter,HeavyAdIntervention"
+                );
 
-                                                             env_ = env;
+            CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), envOptions.Get(),
+                                                      Callback<
+                                                          ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+                                                          [this](HRESULT result,
+                                                                 ICoreWebView2Environment *env) -> HRESULT {
+                                                              if (FAILED(result)) return result;
 
-                                                             env->CreateCoreWebView2Controller(hwnd_,
-                                                                 Callback<
-                                                                     ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                                                                     [this](HRESULT result,
-                                                                            ICoreWebView2Controller *controller) ->
-                                                                 HRESULT {
-                                                                         if (FAILED(result)) return result;
+                                                              env_ = env;
 
-                                                                         controller_ = controller;
-                                                                         controller_->get_CoreWebView2(&webview_);
+                                                              env->CreateCoreWebView2Controller(hwnd_,
+                                                                  Callback<
+                                                                      ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                                                                      [this](HRESULT result,
+                                                                             ICoreWebView2Controller *controller) ->
+                                                                  HRESULT {
+                                                                          if (FAILED(result)) return result;
 
-                                                                         RECT bounds;
-                                                                         GetClientRect(hwnd_, &bounds);
-                                                                         controller_->put_Bounds(bounds);
+                                                                          controller_ = controller;
+                                                                          controller_->get_CoreWebView2(&webview_);
 
-                                                                         SetupIpc();
-                                                                         SetupResourceInterceptor();
+                                                                          RECT bounds;
+                                                                          GetClientRect(hwnd_, &bounds);
+                                                                          controller_->put_Bounds(bounds);
 
-                                                                         if (!pending_url_.empty()) {
-                                                                             Navigate(pending_url_);
-                                                                             pending_url_.clear();
-                                                                         }
+                                                                          ApplyMemorySettings();
 
-                                                                         if (!pending_html_.empty()) {
-                                                                             SetHTML(pending_html_);
-                                                                             pending_html_.clear();
-                                                                         }
-                                                                         return S_OK;
-                                                                     }).Get());
-                                                             return S_OK;
-                                                         }).Get());
+                                                                          SetupIpc();
+                                                                          SetupResourceInterceptor();
+
+                                                                          if (!pending_url_.empty()) {
+                                                                              Navigate(pending_url_);
+                                                                              pending_url_.clear();
+                                                                          }
+
+                                                                          if (!pending_html_.empty()) {
+                                                                              SetHTML(pending_html_);
+                                                                              pending_html_.clear();
+                                                                          }
+                                                                          return S_OK;
+                                                                      }).Get());
+                                                              return S_OK;
+                                                          }).Get());
+        }
+
+        void ApplyMemorySettings() {
+            ComPtr<ICoreWebView2Settings> settings;
+            if (FAILED(webview_->get_Settings(&settings))) return;
+
+            settings->put_AreDevToolsEnabled(FALSE);
+            settings->put_AreDefaultScriptDialogsEnabled(FALSE);
+            settings->put_IsStatusBarEnabled(FALSE);
+            settings->put_AreDefaultContextMenusEnabled(FALSE);
+            settings->put_IsBuiltInErrorPageEnabled(FALSE);
+
+            ComPtr<ICoreWebView2Settings3> settings3;
+            if (SUCCEEDED(settings.As(&settings3))) {
+                settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+            }
+
+            ComPtr<ICoreWebView2Settings4> settings4;
+            if (SUCCEEDED(settings.As(&settings4))) {
+                settings4->put_IsPasswordAutosaveEnabled(FALSE);
+                settings4->put_IsGeneralAutofillEnabled(FALSE);
+            }
+
+            ComPtr<ICoreWebView2Settings5> settings5;
+            if (SUCCEEDED(settings.As(&settings5))) {
+                settings5->put_IsPinchZoomEnabled(FALSE);
+            }
+
+            ComPtr<ICoreWebView2Settings6> settings6;
+            if (SUCCEEDED(settings.As(&settings6))) {
+                settings6->put_IsSwipeNavigationEnabled(FALSE);
+            }
         }
 
         void SetupIpc() {
@@ -262,4 +374,5 @@ namespace shine::engine {
     void WebView::SetAssetProvider(AssetProvider provider) { pImpl_->SetAssetProvider(std::move(provider)); }
     void WebView::OnMessageReceived(MessageCallback callback) { pImpl_->onMessage_ = std::move(callback); }
     void WebView::Resize(uint32_t width, uint32_t height) { pImpl_->Resize(width, height); }
+    void WebView::CollectGarbage() { pImpl_->ForceGarbageCollection(); }
 }
