@@ -68,6 +68,7 @@ const cpp = `#pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -94,10 +95,23 @@ ${entries
   .join("\n")}
   };
 
+  static constexpr std::size_t kAssetCount = sizeof(kAssets) / sizeof(kAssets[0]);
+
   inline std::optional<AssetEntry> Find(std::string_view relPath) {
-    for (const auto& a : kAssets) {
-      if (relPath == a.path) return a;
+    const auto* begin = kAssets;
+    const auto* end = kAssets + kAssetCount;
+    const auto* it = std::lower_bound(
+      begin,
+      end,
+      relPath,
+      [](const AssetEntry& asset, std::string_view path) {
+        return std::string_view(asset.path) < path;
+      });
+
+    if (it != end && relPath == it->path) {
+      return *it;
     }
+
     return std::nullopt;
   }
 }

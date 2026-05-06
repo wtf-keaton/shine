@@ -11,8 +11,11 @@ namespace shine {
         uint32_t height = 768;
         bool frameless = false;
         bool resizable = true;
+        bool centered = false;
 
         std::unordered_set<std::string> allowed_commands;
+        std::unordered_set<std::string> allowed_permissions;
+        bool has_capabilities_policy = false;
 
         static AppConfig Load(const std::string& filepath);
     };

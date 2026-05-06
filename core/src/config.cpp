@@ -32,13 +32,40 @@ namespace shine {
                 if (w.contains("resizable") && w["resizable"].is_boolean()) {
                     config.resizable = w["resizable"];
                 }
+                if (w.contains("centered") && w["centered"].is_boolean()) {
+                    config.centered = w["centered"];
+                }
             }
 
             if (json_data.contains("capabilities")) {
-                auto& cap = json_data["capabilities"];
-                if (cap.contains("allowedCommands") && cap["allowedCommands"].is_array()) {
-                    for (const auto& cmd : cap["allowedCommands"]) {
-                        config.allowed_commands.insert(cmd.get<std::string>());
+                config.has_capabilities_policy = true;
+                const auto& capabilities = json_data["capabilities"];
+
+                auto read_capability_object = [&config](const nlohmann::json& cap) {
+                    if (cap.contains("allowedCommands") && cap["allowedCommands"].is_array()) {
+                        for (const auto& cmd : cap["allowedCommands"]) {
+                            if (cmd.is_string()) {
+                                config.allowed_commands.insert(cmd.get<std::string>());
+                            }
+                        }
+                    }
+
+                    if (cap.contains("permissions") && cap["permissions"].is_array()) {
+                        for (const auto& permission : cap["permissions"]) {
+                            if (permission.is_string()) {
+                                config.allowed_permissions.insert(permission.get<std::string>());
+                            }
+                        }
+                    }
+                };
+
+                if (capabilities.is_object()) {
+                    read_capability_object(capabilities);
+                } else if (capabilities.is_array()) {
+                    for (const auto& cap : capabilities) {
+                        if (cap.is_object()) {
+                            read_capability_object(cap);
+                        }
                     }
                 }
             }

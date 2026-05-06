@@ -21,7 +21,12 @@ namespace shine {
 
             AppConfig appConfig = AppConfig::Load(config);
 
-            router_.SetAllowedCommands(appConfig.allowed_commands);
+            if (appConfig.has_capabilities_policy) {
+                router_.SetAllowedPermissions(appConfig.allowed_permissions);
+                if (!appConfig.allowed_commands.empty()) {
+                    router_.SetAllowedCommands(appConfig.allowed_commands);
+                }
+            }
 
             engine::WindowConfig winConfig;
             winConfig.title = appConfig.title;
@@ -29,25 +34,24 @@ namespace shine {
             winConfig.height = appConfig.height;
             winConfig.frameless = appConfig.frameless;
             winConfig.resizable = appConfig.resizable;
+            winConfig.centered = appConfig.centered;
 
             mainWindow_ = std::make_unique<engine::Window>(winConfig);
+            webView_ = std::make_unique<engine::WebView>(*mainWindow_);
 
             mainWindow_->OnResize([this](const uint32_t width, const uint32_t height) {
-                webView_->Resize(width, height);
+                if (webView_) {
+                    webView_->Resize(width, height);
+                }
             });
 
             mainWindow_->OnClose([] {
                 return true;
             });
 
-            webView_ = std::make_unique<engine::WebView>(*mainWindow_);
-
             webView_->OnMessageReceived([this](const std::string &msg) {
-                const std::string js_response = router_.Route(msg);
-
-                if (!js_response.empty()) {
-                    webView_->ExecuteScript(js_response);
-                }
+                const auto response = router_.Route(msg);
+                webView_->PostJsonMessage(response.dump());
             });
         }
 
@@ -99,6 +103,8 @@ namespace shine {
     }
 
     App::~App() = default;
+    App::App(App&&) noexcept = default;
+    App& App::operator=(App&&) noexcept = default;
 
     int App::Run() const { return pImpl_->Run(); }
     engine::Window &App::GetMainWindow() const { return pImpl_->GetMainWindow(); }

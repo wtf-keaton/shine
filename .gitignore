@@ -67,6 +67,8 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+benchmark-results.json
+results.json
 
 
 .npmrc

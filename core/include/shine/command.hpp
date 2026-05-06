@@ -8,3 +8,6 @@
 
 #define SHINE_HANDLER(func) \
         shine::ipc::HandlerRegistration{#func, func}
+
+#define SHINE_PERMISSION(name, ...) \
+        shine::ipc::PermissionRegistration{name, {__VA_ARGS__}}

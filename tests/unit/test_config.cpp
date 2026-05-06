@@ -28,6 +28,7 @@ TEST_F(ConfigTest, DefaultValues) {
     EXPECT_EQ(config.height, 768);
     EXPECT_FALSE(config.frameless);
     EXPECT_TRUE(config.resizable);
+    EXPECT_FALSE(config.centered);
     EXPECT_TRUE(config.allowed_commands.empty());
 }
 
@@ -39,7 +40,8 @@ TEST_F(ConfigTest, ParseWindowSettings) {
             "width": 1280,
             "height": 800,
             "frameless": true,
-            "resizable": false
+            "resizable": false,
+            "centered": true
         }
     })");
     shine::AppConfig config = shine::AppConfig::Load(test_config_path_);
@@ -50,7 +52,8 @@ TEST_F(ConfigTest, ParseWindowSettings) {
             "width": 1280,
             "height": 800,
             "frameless": true,
-            "resizable": false
+            "resizable": false,
+            "centered": true
         }
     })");
 #endif
@@ -60,28 +63,62 @@ TEST_F(ConfigTest, ParseWindowSettings) {
     EXPECT_EQ(config.height, 800);
     EXPECT_TRUE(config.frameless);
     EXPECT_FALSE(config.resizable);
+    EXPECT_TRUE(config.centered);
 }
 
 TEST_F(ConfigTest, ParseCapabilities) {
 #ifdef _DEBUG
     WriteTestConfig(R"({
         "capabilities": {
-            "allowedCommands": ["cmd1", "cmd2", "cmd3"]
+            "permissions": ["fs:default", "window:default"],
+            "allowedCommands": ["legacy_cmd"]
         }
     })");
     shine::AppConfig config = shine::AppConfig::Load(test_config_path_);
 #else
     shine::AppConfig config = shine::AppConfig::Load(R"({
         "capabilities": {
-            "allowedCommands": ["cmd1", "cmd2", "cmd3"]
+            "permissions": ["fs:default", "window:default"],
+            "allowedCommands": ["legacy_cmd"]
         }
     })");
 #endif
 
-    EXPECT_EQ(config.allowed_commands.size(), 3);
-    EXPECT_TRUE(config.allowed_commands.contains("cmd1"));
-    EXPECT_TRUE(config.allowed_commands.contains("cmd2"));
-    EXPECT_TRUE(config.allowed_commands.contains("cmd3"));
+    EXPECT_TRUE(config.has_capabilities_policy);
+    EXPECT_EQ(config.allowed_permissions.size(), 2);
+    EXPECT_TRUE(config.allowed_permissions.contains("fs:default"));
+    EXPECT_TRUE(config.allowed_permissions.contains("window:default"));
+    EXPECT_TRUE(config.allowed_commands.contains("legacy_cmd"));
+}
+
+TEST_F(ConfigTest, ParseTauriStyleCapabilityArray) {
+#ifdef _DEBUG
+    WriteTestConfig(R"({
+        "capabilities": [
+            {
+                "identifier": "main",
+                "windows": ["main"],
+                "permissions": ["fs:allow-read-text-file", "window:allow-close"]
+            }
+        ]
+    })");
+    shine::AppConfig config = shine::AppConfig::Load(test_config_path_);
+#else
+    shine::AppConfig config = shine::AppConfig::Load(R"({
+        "capabilities": [
+            {
+                "identifier": "main",
+                "windows": ["main"],
+                "permissions": ["fs:allow-read-text-file", "window:allow-close"]
+            }
+        ]
+    })");
+#endif
+
+    EXPECT_TRUE(config.has_capabilities_policy);
+    EXPECT_EQ(config.allowed_permissions.size(), 2);
+    EXPECT_TRUE(config.allowed_permissions.contains("fs:allow-read-text-file"));
+    EXPECT_TRUE(config.allowed_permissions.contains("window:allow-close"));
 }
 
 TEST_F(ConfigTest, PartialConfig) {

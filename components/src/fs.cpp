@@ -6,7 +6,7 @@
 
 namespace shine::components {
     void FileSystem::Init(App &app) {
-        app.GetRouter().AddHandler("fs_read_text_file", [](const nlohmann::json &payload) {
+        app.GetRouter().AddProtectedHandler("fs_read_text_file", [](const nlohmann::json &payload) {
             if (!payload.contains("path") || !payload["path"].is_string()) {
                 throw std::runtime_error("Missing string parameter 'path'");
             }
@@ -32,6 +32,11 @@ namespace shine::components {
                 {"content", buffer.str()},
                 {"success", true}
             });
+        });
+
+        app.GetRouter().AddPermissions({
+            {"fs:default", {"fs_read_text_file"}},
+            {"fs:allow-read-text-file", {"fs_read_text_file"}}
         });
     }
 }

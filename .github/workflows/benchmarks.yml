@@ -53,8 +53,15 @@ jobs:
           Remove-Item -Path "$env:TEMP\Shine_Bench_WebView_Data" -Recurse -Force -ErrorAction SilentlyContinue
           Get-Process -Name "msedgewebview2" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 2
-          .\build\benchmarks\shine_benchmarks.exe --json | Out-File -FilePath benchmark-results.json -Encoding utf8
+          .\build\benchmarks\shine_benchmarks.exe --benchmark_out_format=json --benchmark_out=benchmark-results.json
           Get-Content benchmark-results.json
+          $json = Get-Content benchmark-results.json | ConvertFrom-Json
+          foreach ($b in $json.benchmarks) {
+            if ($b.error_occurred) {
+              Write-Host "::error::Benchmark failed: $($b.name) - $($b.error_message)"
+              exit 1
+            }
+          }
 
       - name: Upload Results
         uses: actions/upload-artifact@v4
@@ -68,9 +75,10 @@ jobs:
         run: |
           $json = Get-Content benchmark-results.json | ConvertFrom-Json
           foreach ($b in $json.benchmarks) {
-            if ($b.status -ne "ok") {
-              Write-Host "::error::Benchmark failed: $($b.name)"
-              exit 1
-            }
-            Write-Host "$($b.name): $($b.private_bytes_mb) MB private, $($b.startup_time_ms) ms startup"
+            $name = $b.name -replace '.*/', ''
+            $privateValue = if ($b.counters -and $b.counters.Private_MB) { $b.counters.Private_MB.value } else { $b.Private_MB }
+            $startupValue = if ($b.counters -and $b.counters.Startup_ms) { $b.counters.Startup_ms.value } else { $b.Startup_ms }
+            $private = [math]::Round([double]$privateValue, 2)
+            $startup = [math]::Round([double]$startupValue, 2)
+            Write-Host "$name`: $private MB private, $startup ms startup"
           }

@@ -1,373 +1,431 @@
 #include <shine/benchmark/memory_profiler.hpp>
 #include <shine/engine/window.hpp>
 
+#include <benchmark/benchmark.h>
 #include <Windows.h>
-#include <wrl.h>
 #include <WebView2.h>
-#include <shlwapi.h>
+#include <wrl.h>
 
-#include <iostream>
-#include <iomanip>
-#include <string>
-#include <vector>
-#include <functional>
-#include <filesystem>
-#include <chrono>
 #include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdint>
+#include <filesystem>
+#include <functional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <thread>
-#include <sstream>
+#include <vector>
 
 using namespace Microsoft::WRL;
 
-namespace shine::benchmark {
+namespace {
+
+constexpr auto kWebViewReadyTimeout = std::chrono::seconds(30);
+constexpr auto kNavigationTimeout = std::chrono::seconds(30);
+constexpr auto kProcessSettleTimeout = std::chrono::seconds(5);
+constexpr auto kMemoryStabilizationDelay = std::chrono::seconds(2);
 
 struct WebViewInstance {
-    std::unique_ptr<engine::Window> window;
+    std::unique_ptr<shine::engine::Window> window;
     ComPtr<ICoreWebView2Controller> controller;
     ComPtr<ICoreWebView2> webview;
 };
 
-static std::wstring Utf8ToWide(std::string_view utf8) {
+std::wstring Utf8ToWide(std::string_view utf8) {
     if (utf8.empty()) return {};
-    int size = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int)utf8.size(), nullptr, 0);
+
+    const int size = MultiByteToWideChar(
+        CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
     std::wstring result(size, 0);
-    MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int)utf8.size(), &result[0], size);
+    MultiByteToWideChar(
+        CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), result.data(), size);
     return result;
 }
 
-static void PumpMessageLoop(int max_iterations = 100) {
-    for (int i = 0; i < max_iterations; ++i) {
-        MSG msg{};
-        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) {
-                return;
-            }
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+std::string HresultMessage(HRESULT hr) {
+    char buffer[32]{};
+    sprintf_s(buffer, "0x%08lX", static_cast<unsigned long>(hr));
+    return buffer;
+}
+
+void PumpMessageLoopOnce() {
+    MSG msg{};
+    while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+        if (msg.message == WM_QUIT) continue;
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
     }
 }
 
-static WebViewInstance CreateHiddenWindow(const std::string& title, uint32_t width = 800, uint32_t height = 600) {
-    engine::WindowConfig config;
+template <typename Predicate>
+bool WaitUntil(Predicate predicate, std::chrono::steady_clock::duration timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+
+    while (!predicate()) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return false;
+        }
+
+        PumpMessageLoopOnce();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    PumpMessageLoopOnce();
+    return true;
+}
+
+void ApplyBenchmarkWebViewSettings(ICoreWebView2* webview) {
+    ComPtr<ICoreWebView2Settings> settings;
+    if (FAILED(webview->get_Settings(&settings)) || !settings) return;
+
+    settings->put_AreDevToolsEnabled(FALSE);
+    settings->put_AreDefaultScriptDialogsEnabled(FALSE);
+    settings->put_IsStatusBarEnabled(FALSE);
+    settings->put_AreDefaultContextMenusEnabled(FALSE);
+    settings->put_IsBuiltInErrorPageEnabled(FALSE);
+
+    ComPtr<ICoreWebView2Settings3> settings3;
+    if (SUCCEEDED(settings.As(&settings3))) {
+        settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+    }
+
+    ComPtr<ICoreWebView2Settings4> settings4;
+    if (SUCCEEDED(settings.As(&settings4))) {
+        settings4->put_IsPasswordAutosaveEnabled(FALSE);
+        settings4->put_IsGeneralAutofillEnabled(FALSE);
+    }
+
+    ComPtr<ICoreWebView2Settings5> settings5;
+    if (SUCCEEDED(settings.As(&settings5))) {
+        settings5->put_IsPinchZoomEnabled(FALSE);
+    }
+
+    ComPtr<ICoreWebView2Settings6> settings6;
+    if (SUCCEEDED(settings.As(&settings6))) {
+        settings6->put_IsSwipeNavigationEnabled(FALSE);
+    }
+}
+
+WebViewInstance CreateHiddenWebView(const std::string& title, std::string_view scenario_name) {
+    shine::engine::WindowConfig config;
     config.title = title;
-    config.width = width;
-    config.height = height;
+    config.width = 800;
+    config.height = 600;
     config.resizable = false;
     config.frameless = true;
 
-    auto window = std::make_unique<engine::Window>(config);
+    auto window = std::make_unique<shine::engine::Window>(config);
+    auto user_data_dir = std::filesystem::temp_directory_path() / "Shine_Bench_WebView_Data" / scenario_name;
+    const std::wstring user_data_folder = user_data_dir.wstring();
+    const HWND hwnd = static_cast<HWND>(window->GetNativeHandle());
 
-    auto tempDir = std::filesystem::temp_directory_path() / "Shine_Bench_WebView_Data";
-    std::wstring userDataFolder = tempDir.wstring();
+    SetWindowPos(
+        hwnd,
+        nullptr,
+        -32000,
+        -32000,
+        static_cast<int>(config.width),
+        static_cast<int>(config.height),
+        SWP_NOZORDER | SWP_NOACTIVATE);
+    ShowWindow(hwnd, SW_SHOWNA);
 
-    std::atomic<bool> env_ready{false};
+    std::atomic<bool> ready{false};
+    HRESULT async_result = S_OK;
     ComPtr<ICoreWebView2Controller> controller;
     ComPtr<ICoreWebView2> webview;
 
-    HWND hwnd = static_cast<HWND>(window->GetNativeHandle());
-
-    CreateCoreWebView2EnvironmentWithOptions(
+    const HRESULT create_result = CreateCoreWebView2EnvironmentWithOptions(
         nullptr,
-        userDataFolder.c_str(),
+        user_data_folder.c_str(),
         nullptr,
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-            [&controller, &webview, &env_ready, hwnd](HRESULT res, ICoreWebView2Environment* env) -> HRESULT {
-                if (FAILED(res)) return res;
+            [&ready, &async_result, &controller, &webview, hwnd](
+                HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
+                async_result = result;
+                if (FAILED(result)) {
+                    ready.store(true);
+                    return result;
+                }
 
-                env->CreateCoreWebView2Controller(
+                environment->CreateCoreWebView2Controller(
                     hwnd,
                     Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                        [&controller, &webview, &env_ready](HRESULT res, ICoreWebView2Controller* ctrl) -> HRESULT {
-                            if (FAILED(res)) return res;
+                        [&ready, &async_result, &controller, &webview](
+                            HRESULT result, ICoreWebView2Controller* new_controller) -> HRESULT {
+                            async_result = result;
+                            if (SUCCEEDED(result) && new_controller) {
+                                controller = new_controller;
+                                controller->get_CoreWebView2(&webview);
+                                if (webview) {
+                                    ApplyBenchmarkWebViewSettings(webview.Get());
+                                }
 
-                            controller = ctrl;
-                            controller->get_CoreWebView2(&webview);
+                                RECT hidden_bounds{0, 0, 0, 0};
+                                controller->put_Bounds(hidden_bounds);
+                            }
 
-                            RECT bounds = {0, 0, 0, 0};
-                            controller->put_Bounds(bounds);
-
-                            env_ready.store(true);
-                            return S_OK;
-                        }).Get());
+                            ready.store(true);
+                            return result;
+                        })
+                        .Get());
                 return S_OK;
-            }).Get());
+            })
+            .Get());
 
-    while (!env_ready.load()) {
-        PumpMessageLoop(1);
+    if (FAILED(create_result)) {
+        throw std::runtime_error("CreateCoreWebView2EnvironmentWithOptions failed: " + HresultMessage(create_result));
+    }
+
+    if (!WaitUntil([&ready] { return ready.load(); }, kWebViewReadyTimeout)) {
+        throw std::runtime_error("Timed out while creating WebView2 environment");
+    }
+
+    if (FAILED(async_result) || !controller || !webview) {
+        throw std::runtime_error("WebView2 initialization failed: " + HresultMessage(async_result));
     }
 
     return {std::move(window), controller, webview};
 }
 
-static BenchmarkResult RunIdleBenchmark() {
-    BenchmarkResult result;
-    result.name = "Idle (blank page)";
-
-    auto start_total = std::chrono::high_resolution_clock::now();
-
-    WebViewInstance instance;
-    try {
-        instance = CreateHiddenWindow("Shine Idle Benchmark");
-    } catch (const std::exception& e) {
-        result.status = "failed";
-        result.error = e.what();
-        return result;
-    }
-
-    std::atomic<bool> navigation_done{false};
-    auto nav_start = std::chrono::high_resolution_clock::now();
-
-    EventRegistrationToken nav_token{};
-    instance.webview->add_NavigationCompleted(
-        Callback<ICoreWebView2NavigationCompletedEventHandler>(
-            [&nav_start, &navigation_done](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
-                nav_start = std::chrono::high_resolution_clock::now();
-                navigation_done.store(true);
-                return S_OK;
-            }).Get(),
-        &nav_token);
-
-    instance.webview->Navigate(L"about:blank");
-
-    while (!navigation_done.load()) {
-        PumpMessageLoop(1);
-    }
-
-    auto nav_end = std::chrono::high_resolution_clock::now();
-    result.startup_time_ms = std::chrono::duration<double, std::milli>(nav_end - nav_start).count();
-
-    std::this_thread::sleep_for(std::chrono::seconds(3));
-
-    result.memory = MemoryProfiler::CaptureSelf();
-
-    auto end_total = std::chrono::high_resolution_clock::now();
-    result.total_time_ms = std::chrono::duration<double, std::milli>(end_total - start_total).count();
-
-    instance.webview->remove_NavigationCompleted(nav_token);
-
-    return result;
-}
-
-static BenchmarkResult RunHeavyDomBenchmark() {
-    BenchmarkResult result;
-    result.name = "Heavy DOM (10k elements)";
-
-    auto start_total = std::chrono::high_resolution_clock::now();
-
-    WebViewInstance instance;
-    try {
-        instance = CreateHiddenWindow("Shine Heavy DOM Benchmark");
-    } catch (const std::exception& e) {
-        result.status = "failed";
-        result.error = e.what();
-        return result;
-    }
-
-    std::atomic<bool> navigation_done{false};
-    auto nav_start = std::chrono::high_resolution_clock::now();
-
-    EventRegistrationToken nav_token{};
-    instance.webview->add_NavigationCompleted(
-        Callback<ICoreWebView2NavigationCompletedEventHandler>(
-            [&nav_start, &navigation_done](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
-                nav_start = std::chrono::high_resolution_clock::now();
-                navigation_done.store(true);
-                return S_OK;
-            }).Get(),
-        &nav_token);
-
-    std::string html = R"(<!DOCTYPE html>
-<html>
-<head><style>
-table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:4px;font-size:11px}
-th{background:#f0f0f0}tr:nth-child(even){background:#fafafa}
-</style></head>
-<body>
-<table><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Status</th></tr></thead><tbody>
-)";
+std::string BuildHeavyDomHtml() {
+    std::string html = R"(<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:12px system-ui,sans-serif}
+table{border-collapse:collapse;width:100%}
+td,th{border:1px solid #ccc;padding:4px}
+th{background:#f0f0f0}
+tr:nth-child(even){background:#fafafa}
+</style></head><body><table><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Status</th></tr></thead><tbody>)";
 
     for (int i = 0; i < 10000; ++i) {
         html += "<tr><td>" + std::to_string(i) + "</td><td>User " + std::to_string(i) +
-                "</td><td>user" + std::to_string(i) + "@bench.test</td><td>active</td></tr>\n";
+            "</td><td>user" + std::to_string(i) + "@bench.test</td><td>active</td></tr>";
     }
 
     html += "</tbody></table></body></html>";
+    return html;
+}
 
-    std::wstring wide_html = Utf8ToWide(html);
-    instance.webview->NavigateToString(wide_html.c_str());
-
-    while (!navigation_done.load()) {
-        PumpMessageLoop(1);
-    }
-
-    auto nav_end = std::chrono::high_resolution_clock::now();
-    result.startup_time_ms = std::chrono::duration<double, std::milli>(nav_end - nav_start).count();
-
-    std::this_thread::sleep_for(std::chrono::seconds(3));
-
-    result.memory = MemoryProfiler::CaptureSelf();
-
-    auto end_total = std::chrono::high_resolution_clock::now();
-    result.total_time_ms = std::chrono::duration<double, std::milli>(end_total - start_total).count();
-
-    instance.webview->remove_NavigationCompleted(nav_token);
-
+shine::benchmark::MemorySnapshot Subtract(
+    shine::benchmark::MemorySnapshot value,
+    shine::benchmark::MemorySnapshot baseline) {
+    shine::benchmark::MemorySnapshot result;
+    result.private_bytes = value.private_bytes > baseline.private_bytes
+        ? value.private_bytes - baseline.private_bytes
+        : 0;
+    result.working_set_bytes = value.working_set_bytes > baseline.working_set_bytes
+        ? value.working_set_bytes - baseline.working_set_bytes
+        : 0;
+    result.process_count = value.process_count > baseline.process_count
+        ? value.process_count - baseline.process_count
+        : 0;
     return result;
 }
 
-static BenchmarkResult RunMultiWindowBenchmark() {
-    BenchmarkResult result;
-    result.name = "Multi-Window (5 instances)";
+void WaitForProcessSettle() {
+    auto previous = shine::benchmark::MemoryProfiler::CaptureSelf();
+    const auto deadline = std::chrono::steady_clock::now() + kProcessSettleTimeout;
 
-    auto start_total = std::chrono::high_resolution_clock::now();
+    while (std::chrono::steady_clock::now() < deadline) {
+        PumpMessageLoopOnce();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    constexpr int kWindowCount = 5;
-    std::vector<WebViewInstance> instances;
-    instances.reserve(kWindowCount);
-
-    std::atomic<int> loaded_count{0};
-    auto nav_start = std::chrono::high_resolution_clock::now();
-
-    for (int i = 0; i < kWindowCount; ++i) {
-        WebViewInstance instance;
-        try {
-            instance = CreateHiddenWindow("Shine Multi-Window " + std::to_string(i));
-        } catch (const std::exception& e) {
-            result.status = "failed";
-            result.error = std::string("Window ") + std::to_string(i) + ": " + e.what();
-            return result;
+        auto current = shine::benchmark::MemoryProfiler::CaptureSelf();
+        if (current.process_count == previous.process_count) {
+            return;
         }
+        previous = current;
+    }
+}
 
-        EventRegistrationToken nav_token{};
-        instance.webview->add_NavigationCompleted(
-            Callback<ICoreWebView2NavigationCompletedEventHandler>(
-                [&loaded_count](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
+double NavigateAndWait(ICoreWebView2* webview, const std::function<void()>& navigate) {
+    std::atomic<bool> navigation_done{false};
+    HRESULT navigation_result = S_OK;
+
+    EventRegistrationToken nav_token{};
+    const HRESULT add_result = webview->add_NavigationCompleted(
+        Callback<ICoreWebView2NavigationCompletedEventHandler>(
+            [&navigation_done, &navigation_result](
+                ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+                BOOL success = FALSE;
+                args->get_IsSuccess(&success);
+                if (!success) navigation_result = E_FAIL;
+                navigation_done.store(true);
+                return S_OK;
+            })
+            .Get(),
+        &nav_token);
+
+    if (FAILED(add_result)) {
+        throw std::runtime_error("Failed to register NavigationCompleted handler: " + HresultMessage(add_result));
+    }
+
+    const auto start = std::chrono::steady_clock::now();
+    navigate();
+
+    if (!WaitUntil([&navigation_done] { return navigation_done.load(); }, kNavigationTimeout)) {
+        webview->remove_NavigationCompleted(nav_token);
+        throw std::runtime_error("Timed out while waiting for navigation");
+    }
+
+    const auto end = std::chrono::steady_clock::now();
+    webview->remove_NavigationCompleted(nav_token);
+
+    if (FAILED(navigation_result)) {
+        throw std::runtime_error("Navigation failed: " + HresultMessage(navigation_result));
+    }
+
+    return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+void AttachCounters(
+    benchmark::State& state,
+    const shine::benchmark::MemorySnapshot& delta,
+    const shine::benchmark::MemorySnapshot& total,
+    double startup_ms) {
+    state.counters["Private_MB"] = delta.private_bytes_mb();
+    state.counters["WorkingSet_MB"] = delta.working_set_mb();
+    state.counters["Processes"] = static_cast<double>(delta.process_count);
+    state.counters["Total_Private_MB"] = total.private_bytes_mb();
+    state.counters["Total_WorkingSet_MB"] = total.working_set_mb();
+    state.counters["Total_Processes"] = static_cast<double>(total.process_count);
+    state.counters["Startup_ms"] = startup_ms;
+}
+
+void RunScenario(
+    benchmark::State& state,
+    const std::function<double(std::vector<WebViewInstance>&)>& scenario) {
+    for (auto _ : state) {
+        try {
+            WaitForProcessSettle();
+            const auto baseline = shine::benchmark::MemoryProfiler::CaptureSelf();
+
+            std::vector<WebViewInstance> instances;
+            const auto total_start = std::chrono::steady_clock::now();
+            const double startup_ms = scenario(instances);
+
+            std::this_thread::sleep_for(kMemoryStabilizationDelay);
+            PumpMessageLoopOnce();
+
+            const auto total_memory = shine::benchmark::MemoryProfiler::CaptureSelf();
+            const auto delta_memory = Subtract(total_memory, baseline);
+            const auto total_end = std::chrono::steady_clock::now();
+
+            auto private_bytes = delta_memory.private_bytes;
+            benchmark::DoNotOptimize(private_bytes);
+            benchmark::ClobberMemory();
+
+            AttachCounters(state, delta_memory, total_memory, startup_ms);
+            state.SetIterationTime(std::chrono::duration<double>(total_end - total_start).count());
+        } catch (const std::exception& error) {
+            state.SkipWithError(error.what());
+            return;
+        }
+    }
+}
+
+void BM_IdleMemory(benchmark::State& state) {
+    RunScenario(state, [](std::vector<WebViewInstance>& instances) {
+        instances.push_back(CreateHiddenWebView("Shine Idle Benchmark", "idle"));
+        return NavigateAndWait(instances.back().webview.Get(), [&instances] {
+            instances.back().webview->Navigate(L"about:blank");
+        });
+    });
+}
+
+void BM_HeavyDomMemory(benchmark::State& state) {
+    RunScenario(state, [](std::vector<WebViewInstance>& instances) {
+        instances.push_back(CreateHiddenWebView("Shine Heavy DOM Benchmark", "heavy-dom"));
+        const std::wstring html = Utf8ToWide(BuildHeavyDomHtml());
+        return NavigateAndWait(instances.back().webview.Get(), [&instances, &html] {
+            instances.back().webview->NavigateToString(html.c_str());
+        });
+    });
+}
+
+void BM_MultiWindowMemory(benchmark::State& state) {
+    constexpr int kWindowCount = 5;
+
+    RunScenario(state, [](std::vector<WebViewInstance>& instances) {
+        instances.reserve(kWindowCount);
+
+        std::atomic<int> loaded_count{0};
+        std::vector<EventRegistrationToken> nav_tokens;
+        nav_tokens.reserve(kWindowCount);
+
+        const auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < kWindowCount; ++i) {
+            instances.push_back(CreateHiddenWebView("Shine Multi Benchmark " + std::to_string(i), "multi-window"));
+
+            EventRegistrationToken token{};
+            auto& webview = instances.back().webview;
+            const HRESULT add_result = webview->add_NavigationCompleted(
+                Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                    [&loaded_count](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
                     loaded_count.fetch_add(1);
                     return S_OK;
-                }).Get(),
-            &nav_token);
+                })
+                    .Get(),
+                &token);
 
-        instance.webview->Navigate(L"about:blank");
-        instances.push_back(std::move(instance));
-    }
+            if (FAILED(add_result)) {
+                throw std::runtime_error("Failed to register NavigationCompleted handler: " +
+                    HresultMessage(add_result));
+            }
 
-    while (loaded_count.load() < kWindowCount) {
-        PumpMessageLoop(1);
-    }
-
-    auto nav_end = std::chrono::high_resolution_clock::now();
-    result.startup_time_ms = std::chrono::duration<double, std::milli>(nav_end - nav_start).count();
-
-    std::this_thread::sleep_for(std::chrono::seconds(3));
-
-    result.memory = MemoryProfiler::CaptureSelf();
-
-    auto end_total = std::chrono::high_resolution_clock::now();
-    result.total_time_ms = std::chrono::duration<double, std::milli>(end_total - start_total).count();
-
-    return result;
-}
-
-static void PrintSeparator() {
-    std::cout << std::string(72, '-') << "\n";
-}
-
-static void PrintResults(const std::vector<BenchmarkResult>& results) {
-    std::cout << "\n";
-    PrintSeparator();
-    std::cout << "  SHINE FRAMEWORK - BENCHMARK RESULTS\n";
-    PrintSeparator();
-    std::cout << std::left;
-
-    for (const auto& r : results) {
-        std::cout << "\n  [" << (r.status == "ok" ? "PASS" : "FAIL") << "] " << r.name << "\n";
-
-        if (r.status != "ok") {
-            std::cout << "    Error: " << r.error << "\n";
-            continue;
+            nav_tokens.push_back(token);
+            webview->Navigate(L"about:blank");
         }
 
-        std::cout << std::fixed << std::setprecision(2);
+        if (!WaitUntil([&loaded_count] { return loaded_count.load() >= kWindowCount; }, kNavigationTimeout)) {
+            throw std::runtime_error("Timed out while waiting for multi-window navigation");
+        }
 
-        std::cout << "    Memory:\n";
-        std::cout << "      Private Bytes:  " << std::setw(10) << r.memory.private_bytes_mb() << " MB\n";
-        std::cout << "      Working Set:    " << std::setw(10) << r.memory.working_set_mb() << " MB\n";
-        std::cout << "      Process Count:  " << std::setw(10) << r.memory.process_count << "\n";
+        const auto end = std::chrono::steady_clock::now();
 
-        std::cout << "    Timing:\n";
-        std::cout << "      Startup Time:   " << std::setw(10) << r.startup_time_ms << " ms\n";
-        std::cout << "      Total Time:     " << std::setw(10) << r.total_time_ms << " ms\n";
-    }
+        for (size_t i = 0; i < instances.size(); ++i) {
+            instances[i].webview->remove_NavigationCompleted(nav_tokens[i]);
+        }
 
-    PrintSeparator();
-    std::cout << "\n";
+        return std::chrono::duration<double, std::milli>(end - start).count();
+    });
 }
 
-static void PrintResultsJson(const std::vector<BenchmarkResult>& results) {
-    std::cout << "{\n  \"benchmarks\": [\n";
+}  // namespace
 
-    for (size_t i = 0; i < results.size(); ++i) {
-        const auto& r = results[i];
-        std::cout << "    {\n";
-        std::cout << "      \"name\": \"" << r.name << "\",\n";
-        std::cout << "      \"status\": \"" << r.status << "\",\n";
-        std::cout << std::fixed << std::setprecision(2);
-        std::cout << "      \"private_bytes_mb\": " << r.memory.private_bytes_mb() << ",\n";
-        std::cout << "      \"working_set_mb\": " << r.memory.working_set_mb() << ",\n";
-        std::cout << "      \"process_count\": " << r.memory.process_count << ",\n";
-        std::cout << "      \"startup_time_ms\": " << r.startup_time_ms << ",\n";
-        std::cout << "      \"total_time_ms\": " << r.total_time_ms << "\n";
-        std::cout << "    }";
-        if (i < results.size() - 1) std::cout << ",";
-        std::cout << "\n";
-    }
+BENCHMARK(BM_IdleMemory)
+    ->Name("Idle_Memory")
+    ->Unit(benchmark::kMillisecond)
+    ->UseManualTime()
+    ->Iterations(1);
+BENCHMARK(BM_HeavyDomMemory)
+    ->Name("Heavy_DOM_Memory")
+    ->Unit(benchmark::kMillisecond)
+    ->UseManualTime()
+    ->Iterations(1);
+BENCHMARK(BM_MultiWindowMemory)
+    ->Name("Multi_Window_Memory")
+    ->Unit(benchmark::kMillisecond)
+    ->UseManualTime()
+    ->Iterations(1);
 
-    std::cout << "  ]\n}\n";
-}
-
-}
-
-int main() {
-    using namespace shine::benchmark;
-
-    std::cout << "Shine Benchmark Suite v0.1.0\n";
-    std::cout << "Measuring total memory footprint (host + all WebView2 child processes)\n\n";
-
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+int main(int argc, char** argv) {
+    const HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(hr)) {
-        std::cerr << "Failed to initialize COM: 0x" << std::hex << hr << "\n";
+        fprintf(stderr, "Failed to initialize COM: %s\n", HresultMessage(hr).c_str());
         return 1;
     }
 
-    bool json_output = false;
-    for (int i = 1; i < __argc; ++i) {
-        std::string arg(__argv[i]);
-        if (arg == "--json") json_output = true;
+    benchmark::Initialize(&argc, argv);
+    if (benchmark::ReportUnrecognizedArguments(argc, argv)) {
+        CoUninitialize();
+        return 1;
     }
 
-    std::vector<BenchmarkResult> results;
-
-    results.push_back(RunIdleBenchmark());
-    results.push_back(RunHeavyDomBenchmark());
-    results.push_back(RunMultiWindowBenchmark());
-
-    if (json_output) {
-        PrintResultsJson(results);
-    } else {
-        PrintResults(results);
-    }
+    benchmark::RunSpecifiedBenchmarks();
+    benchmark::Shutdown();
 
     CoUninitialize();
-
-    int exit_code = 0;
-    for (const auto& r : results) {
-        if (r.status != "ok") {
-            exit_code = 1;
-            break;
-        }
-    }
-
-    return exit_code;
+    return 0;
 }

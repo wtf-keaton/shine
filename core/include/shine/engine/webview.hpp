@@ -25,6 +25,7 @@ namespace shine::engine {
         void SetHTML(std::string_view html);
 
         void ExecuteScript(std::string_view script);
+        void PostJsonMessage(std::string_view json);
 
         struct AssetResponse {
             std::string mime;

@@ -40,6 +40,18 @@ namespace shine::engine {
             SetWindowTextW(hwnd_, Utf8ToWide(title).c_str());
         }
 
+        void SetSize(uint32_t width, uint32_t height) const {
+            SetWindowPos(
+                hwnd_,
+                nullptr,
+                0,
+                0,
+                static_cast<int>(width),
+                static_cast<int>(height),
+                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE
+            );
+        }
+
         [[nodiscard]] uint32_t GetWidth() const {
             RECT rect;
             GetClientRect(hwnd_, &rect);
@@ -99,10 +111,37 @@ namespace shine::engine {
                 style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
             }
 
+            RECT windowRect = {
+                0,
+                0,
+                static_cast<LONG>(config_.width),
+                static_cast<LONG>(config_.height)
+            };
+            AdjustWindowRectEx(&windowRect, style, FALSE, 0);
+
+            const int windowWidth = windowRect.right - windowRect.left;
+            const int windowHeight = windowRect.bottom - windowRect.top;
+            int x = CW_USEDEFAULT;
+            int y = CW_USEDEFAULT;
+
+            if (config_.centered) {
+                POINT cursor{};
+                GetCursorPos(&cursor);
+                HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+                MONITORINFO monitorInfo{};
+                monitorInfo.cbSize = sizeof(MONITORINFO);
+
+                if (GetMonitorInfoW(monitor, &monitorInfo)) {
+                    const RECT& workArea = monitorInfo.rcWork;
+                    x = workArea.left + ((workArea.right - workArea.left) - windowWidth) / 2;
+                    y = workArea.top + ((workArea.bottom - workArea.top) - windowHeight) / 2;
+                }
+            }
+
             hwnd_ = CreateWindowExW(
                 0, className_.c_str(), Utf8ToWide(config_.title).c_str(),
                 style,
-                CW_USEDEFAULT, CW_USEDEFAULT, config_.width, config_.height,
+                x, y, windowWidth, windowHeight,
                 nullptr, nullptr, GetModuleHandle(nullptr),
                 this
             );
@@ -175,6 +214,7 @@ namespace shine::engine {
     void Window::SetTitle(std::string_view title) { pImpl_->SetTitle(title); }
     uint32_t Window::GetWidth() const { return pImpl_->GetWidth(); }
     uint32_t Window::GetHeight() const { return pImpl_->GetHeight(); }
+    void Window::SetSize(uint32_t width, uint32_t height) { pImpl_->SetSize(width, height); }
     void Window::OnResize(ResizeCallback callback) { pImpl_->onResize_ = std::move(callback); }
     void Window::OnClose(CloseCallback callback) { pImpl_->onClose_ = std::move(callback); }
     void *Window::GetNativeHandle() const { return pImpl_->GetNativeHandle(); }

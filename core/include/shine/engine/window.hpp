@@ -13,6 +13,7 @@ namespace shine::engine {
         uint32_t height = 600;
         bool resizable = true;
         bool frameless = false;
+        bool centered = false;
     };
 
     class Window final {

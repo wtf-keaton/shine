@@ -12,9 +12,8 @@ TEST(IPCRouter, RouteMessageWithHandler) {
     Router router;
     router.AddHandler("ping", EchoHandler);
 
-    std::string result = router.Route(R"({"id":1,"cmd":"ping","payload":"hello"})");
+    nlohmann::json response = router.Route(R"({"id":1,"cmd":"ping","payload":"hello"})");
 
-    nlohmann::json response = nlohmann::json::parse(result.substr(result.find('(') + 1, result.rfind(')') - result.find('(') - 1));
     EXPECT_EQ(response["id"], 1);
     EXPECT_EQ(response["cmd"], "ping");
     EXPECT_EQ(response["data"], R"("hello")");
@@ -22,58 +21,101 @@ TEST(IPCRouter, RouteMessageWithHandler) {
 
 TEST(IPCRouter, RejectUnknownCommand) {
     Router router;
-    router.AddHandler("known", EchoHandler);
+    router.AddProtectedHandler("known", EchoHandler);
+    router.SetAllowedCommands({"known"});
 
-    std::string result = router.Route(R"({"id":2,"cmd":"unknown","payload":null})");
+    nlohmann::json result = router.Route(R"({"id":2,"cmd":"unknown","payload":null})");
 
-    EXPECT_TRUE(result.find("Security Block") != std::string::npos);
-    EXPECT_TRUE(result.find("unknown") != std::string::npos);
+    EXPECT_TRUE(result["data"]["error"].get<std::string>().find("Security Block") != std::string::npos);
+    EXPECT_TRUE(result["data"]["error"].get<std::string>().find("unknown") != std::string::npos);
 }
 
 TEST(IPCRouter, RejectMalformedJSON) {
     Router router;
 
-    std::string result = router.Route("not json");
+    nlohmann::json result = router.Route("not json");
 
-    EXPECT_TRUE(result.find("console.error") != std::string::npos);
-    EXPECT_TRUE(result.find("parse Error") != std::string::npos);
+    EXPECT_TRUE(result["data"]["error"].get<std::string>().find("parse Error") != std::string::npos);
 }
 
 TEST(IPCRouter, RejectMissingCmdField) {
     Router router;
     router.AddHandler("test", EchoHandler);
 
-    std::string result = router.Route(R"({"id":3,"payload":null})");
+    nlohmann::json result = router.Route(R"({"id":3,"payload":null})");
 
-    EXPECT_TRUE(result.find("console.error") != std::string::npos);
-    EXPECT_TRUE(result.find("IPC Error") != std::string::npos);
+    EXPECT_TRUE(result["data"]["error"].get<std::string>().find("IPC Error") != std::string::npos);
 }
 
 TEST(IPCRouter, SecurityBlock) {
     Router router;
-    router.AddHandler("allowed_cmd", EchoHandler);
-    router.AddHandler("blocked_cmd", EchoHandler);
+    router.AddProtectedHandler("allowed_cmd", EchoHandler);
+    router.AddProtectedHandler("blocked_cmd", EchoHandler);
 
     std::unordered_set<std::string> allowed = {"allowed_cmd"};
     router.SetAllowedCommands(allowed);
 
-    std::string result = router.Route(R"({"id":4,"cmd":"blocked_cmd","payload":null})");
+    nlohmann::json result = router.Route(R"({"id":4,"cmd":"blocked_cmd","payload":null})");
 
-    EXPECT_TRUE(result.find("Security Block") != std::string::npos);
+    EXPECT_TRUE(result["data"]["error"].get<std::string>().find("Security Block") != std::string::npos);
+}
+
+TEST(IPCRouter, PermissionAllowsRegisteredCommands) {
+    Router router;
+    router.SetAllowedPermissions({"fs:default"});
+    router.AddPermission("fs:default", {"fs_read_text_file"});
+    router.AddProtectedHandler("fs_read_text_file", EchoHandler);
+
+    nlohmann::json response = router.Route(R"({"id":9,"cmd":"fs_read_text_file","payload":"ok"})");
+
+    EXPECT_EQ(response["data"], R"("ok")");
+}
+
+TEST(IPCRouter, PermissionRegisteredBeforePolicy) {
+    Router router;
+    router.AddPermission("window:default", {"window_drag", "close"});
+    router.SetAllowedPermissions({"window:default"});
+    router.AddProtectedHandler("close", EchoHandler);
+
+    nlohmann::json response = router.Route(R"({"id":10,"cmd":"close","payload":null})");
+
+    EXPECT_EQ(response["cmd"], "close");
+    EXPECT_EQ(response["data"], "null");
+}
+
+TEST(IPCRouter, UnknownPermissionDoesNotAllowCommand) {
+    Router router;
+    router.SetAllowedPermissions({"fs:default"});
+    router.AddPermission("window:default", {"close"});
+    router.AddProtectedHandler("close", EchoHandler);
+
+    nlohmann::json response = router.Route(R"({"id":11,"cmd":"close","payload":null})");
+
+    EXPECT_TRUE(response["data"]["error"].get<std::string>().find("Security Block") != std::string::npos);
 }
 
 TEST(IPCRouter, AllowedCommandPasses) {
     Router router;
-    router.AddHandler("allowed_cmd", EchoHandler);
+    router.AddProtectedHandler("allowed_cmd", EchoHandler);
 
     std::unordered_set<std::string> allowed = {"allowed_cmd"};
     router.SetAllowedCommands(allowed);
 
-    std::string result = router.Route(R"({"id":5,"cmd":"allowed_cmd","payload":{"key":"value"}})");
+    nlohmann::json response = router.Route(R"({"id":5,"cmd":"allowed_cmd","payload":{"key":"value"}})");
 
-    nlohmann::json response = nlohmann::json::parse(result.substr(result.find('(') + 1, result.rfind(')') - result.find('(') - 1));
     EXPECT_EQ(response["cmd"], "allowed_cmd");
     EXPECT_EQ(response["data"], R"({"key":"value"})");
+}
+
+TEST(IPCRouter, UserCommandPassesWithoutExplicitCapability) {
+    Router router;
+    router.SetAllowedPermissions({"fs:default"});
+    router.AddHandler("greet", EchoHandler);
+
+    nlohmann::json response = router.Route(R"({"id":12,"cmd":"greet","payload":{"name":"Ada"}})");
+
+    EXPECT_EQ(response["cmd"], "greet");
+    EXPECT_EQ(response["data"], R"({"name":"Ada"})");
 }
 
 TEST(IPCRouter, AddHandlersInitializerList) {
@@ -83,19 +125,18 @@ TEST(IPCRouter, AddHandlersInitializerList) {
         {"cmd2", EchoHandler}
     });
 
-    std::string result1 = router.Route(R"({"id":6,"cmd":"cmd1","payload":"a"})");
-    std::string result2 = router.Route(R"({"id":7,"cmd":"cmd2","payload":"b"})");
+    nlohmann::json result1 = router.Route(R"({"id":6,"cmd":"cmd1","payload":"a"})");
+    nlohmann::json result2 = router.Route(R"({"id":7,"cmd":"cmd2","payload":"b"})");
 
-    EXPECT_TRUE(result1.find("a") != std::string::npos);
-    EXPECT_TRUE(result2.find("b") != std::string::npos);
+    EXPECT_EQ(result1["data"], R"("a")");
+    EXPECT_EQ(result2["data"], R"("b")");
 }
 
 TEST(IPCRouter, NullPayload) {
     Router router;
     router.AddHandler("test", EchoHandler);
 
-    std::string result = router.Route(R"({"id":8,"cmd":"test","payload":null})");
+    nlohmann::json response = router.Route(R"({"id":8,"cmd":"test","payload":null})");
 
-    nlohmann::json response = nlohmann::json::parse(result.substr(result.find('(') + 1, result.rfind(')') - result.find('(') - 1));
     EXPECT_EQ(response["data"], "null");
 }

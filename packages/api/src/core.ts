@@ -7,6 +7,7 @@ declare global {
         chrome?: {
             webview?: {
                 postMessage: (message: any) => void;
+                addEventListener?: (type: 'message', listener: (event: { data: any }) => void) => void;
             }
         };
     }
@@ -24,6 +25,10 @@ if (typeof window !== 'undefined') {
             pendingRequests.delete(response.id);
         }
     };
+
+    window.chrome?.webview?.addEventListener?.('message', (event) => {
+        window.__SHINE_IPC_RECEIVE__(event.data);
+    });
 }
 
 export async function invoke<T>(cmd: string, payload: any = {}): Promise<T> {

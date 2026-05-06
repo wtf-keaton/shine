@@ -66,7 +66,23 @@ flowchart TD
 
 - **Dev**: web assets are served by Vite.
 - **Prod**: web assets are compiled into a generated C++ header and served from memory by the WebView resource interceptor.
-- **IPC**: the frontend calls `window.chrome.webview.postMessage(...)`; the native side routes commands via an allowlist (`shine.conf.json`).
+- **IPC**: the frontend calls `window.chrome.webview.postMessage(...)`; the native side routes commands through Tauri-style capabilities in `shine.conf.json`.
+
+Example capability config:
+
+```json
+{
+  "capabilities": [
+    {
+      "identifier": "main",
+      "windows": ["main"],
+      "permissions": ["fs:default", "window:default"]
+    }
+  ]
+}
+```
+
+Components register named permissions such as `fs:default` and `window:default`, so apps do not need to list every native IPC command manually. Commands created with `SHINE_COMMAND` are app-local commands and are allowed automatically.
 
 ## Scaffolding: `create-shine-app`
 

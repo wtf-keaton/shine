@@ -94,6 +94,7 @@ else()
 endif()
 
 option(SHINE_ENABLE_TESTS "Build unit tests" ON)
+option(SHINE_ENABLE_BENCHMARKS "Build benchmarks" ON)
 
 if (SHINE_ENABLE_TESTS)
     enable_testing()
@@ -142,34 +143,41 @@ if (SHINE_ENABLE_TESTS)
     )
 endif()
 
-set(SHINE_BENCHMARK_SOURCES
-        benchmarks/src/memory_profiler.cpp
-        benchmarks/src/benchmarks.cpp
-)
+if (SHINE_ENABLE_BENCHMARKS)
+    if (NOT WIN32)
+        message(WARNING "Shine benchmarks are currently implemented for Windows/WebView2 only")
+    else()
+        find_package(benchmark CONFIG REQUIRED)
 
-add_executable(shine_benchmarks ${SHINE_BENCHMARK_SOURCES})
+        add_executable(shine_benchmarks
+                benchmarks/src/memory_profiler.cpp
+                benchmarks/src/benchmarks.cpp
+        )
 
-target_include_directories(shine_benchmarks
-        PRIVATE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/core/include>
-)
+        target_include_directories(shine_benchmarks
+                PRIVATE
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/include>
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/core/include>
+        )
 
-target_link_libraries(shine_benchmarks PRIVATE
-        shine_core
-        unofficial::webview2::webview2
-        user32 ole32 advapi32 shlwapi psapi
-)
+        target_link_libraries(shine_benchmarks PRIVATE
+                shine_core
+                unofficial::webview2::webview2
+                user32 ole32 advapi32 shlwapi psapi
+                benchmark::benchmark
+        )
 
-set_target_properties(shine_benchmarks PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
-)
+        set_target_properties(shine_benchmarks PROPERTIES
+                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+        )
 
-if (MSVC)
-    set_target_properties(shine_benchmarks PROPERTIES
-            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-    )
-    target_compile_options(shine_benchmarks PRIVATE /W4)
-else()
-    target_compile_options(shine_benchmarks PRIVATE -Wall -Wextra -Wpedantic)
+        if (MSVC)
+            set_target_properties(shine_benchmarks PROPERTIES
+                    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+            )
+            target_compile_options(shine_benchmarks PRIVATE /W4)
+        else()
+            target_compile_options(shine_benchmarks PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+    endif()
 endif()

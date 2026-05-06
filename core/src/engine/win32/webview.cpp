@@ -91,6 +91,16 @@ namespace shine::engine {
         }
 
         ~Impl() {
+            if (webview_) {
+                if (hasWebMessageToken_) {
+                    webview_->remove_WebMessageReceived(webMessageToken_);
+                    hasWebMessageToken_ = false;
+                }
+                if (hasResourceRequestedToken_) {
+                    webview_->remove_WebResourceRequested(resourceRequestedToken_);
+                    hasResourceRequestedToken_ = false;
+                }
+            }
             if (controller_) {
                 controller_->Close();
             }
@@ -118,12 +128,25 @@ namespace shine::engine {
             }
         }
 
+        void PostJsonMessage(std::string_view json) {
+            if (webview_) {
+                webview_->PostWebMessageAsJson(Utf8ToWide(json).c_str());
+            }
+        }
+
         void SetAssetProvider(WebView::AssetProvider provider) {
             assetProvider_ = std::move(provider);
         }
 
         void Resize(uint32_t width, uint32_t height) {
             if (controller_) {
+                if (width == currentWidth_ && height == currentHeight_) {
+                    return;
+                }
+
+                currentWidth_ = width;
+                currentHeight_ = height;
+
                 RECT bounds = {0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
                 controller_->put_Bounds(bounds);
             }
@@ -149,6 +172,12 @@ namespace shine::engine {
         std::string pending_url_;
         std::string pending_html_;
         WebView::AssetProvider assetProvider_;
+        uint32_t currentWidth_ = 0;
+        uint32_t currentHeight_ = 0;
+        EventRegistrationToken webMessageToken_{};
+        EventRegistrationToken resourceRequestedToken_{};
+        bool hasWebMessageToken_ = false;
+        bool hasResourceRequestedToken_ = false;
 
         void InitializeWebView() {
             auto tempDir = std::filesystem::temp_directory_path() / "Shine_WebView_Data";
@@ -245,10 +274,11 @@ namespace shine::engine {
         }
 
         void SetupIpc() {
-            EventRegistrationToken token;
-            webview_->add_WebMessageReceived(
+            if (hasWebMessageToken_) return;
+
+            if (SUCCEEDED(webview_->add_WebMessageReceived(
                 Callback<ICoreWebView2WebMessageReceivedEventHandler>(
-                    [this](ICoreWebView2 *sender, ICoreWebView2WebMessageReceivedEventArgs *args) -> HRESULT {
+                    [this](ICoreWebView2 *, ICoreWebView2WebMessageReceivedEventArgs *args) -> HRESULT {
                         LPWSTR messageRaw;
                         if (SUCCEEDED(args->get_WebMessageAsJson(&messageRaw))) {
                             std::wstring wmsg(messageRaw);
@@ -259,16 +289,23 @@ namespace shine::engine {
                             }
                         }
                         return S_OK;
-                    }).Get(), &token);
+                    }).Get(), &webMessageToken_))) {
+                hasWebMessageToken_ = true;
+            }
         }
 
-        void SetupResourceInterceptor() const {
-            webview_->AddWebResourceRequestedFilter(L"http://shine-ui.app/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+        void SetupResourceInterceptor() {
+            if (hasResourceRequestedToken_) return;
 
-            EventRegistrationToken token;
-            webview_->add_WebResourceRequested(
+            if (FAILED(webview_->AddWebResourceRequestedFilter(
+                    L"http://shine-ui.app/*",
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL))) {
+                return;
+            }
+
+            if (SUCCEEDED(webview_->add_WebResourceRequested(
                 Callback<ICoreWebView2WebResourceRequestedEventHandler>(
-                    [this](ICoreWebView2 *sender, ICoreWebView2WebResourceRequestedEventArgs *args) -> HRESULT {
+                    [this](ICoreWebView2 *, ICoreWebView2WebResourceRequestedEventArgs *args) -> HRESULT {
                         ComPtr<ICoreWebView2WebResourceRequest> request;
                         args->get_Request(&request);
                         LPWSTR uriRaw;
@@ -280,7 +317,9 @@ namespace shine::engine {
                             return HandleLocalResource(uri, args);
                         }
                         return S_OK;
-                    }).Get(), &token);
+                    }).Get(), &resourceRequestedToken_))) {
+                hasResourceRequestedToken_ = true;
+            }
         }
 
         HRESULT HandleLocalResource(const std::wstring &uri, ICoreWebView2WebResourceRequestedEventArgs *args) const {
@@ -289,6 +328,11 @@ namespace shine::engine {
             if (uri.find(prefix) != 0) return S_OK;
 
             std::wstring relativePath = uri.substr(prefix.length());
+
+            const std::size_t pathEnd = relativePath.find_first_of(L"?#");
+            if (pathEnd != std::wstring::npos) {
+                relativePath.erase(pathEnd);
+            }
 
             if (relativePath.empty() || relativePath == L"/") relativePath = L"index.html";
             if (relativePath[0] == L'/') relativePath.erase(0, 1);
@@ -316,12 +360,19 @@ namespace shine::engine {
                     }
 
                     std::wstring mimeW = Utf8ToWide(asset->mime.empty() ? "application/octet-stream" : asset->mime);
+                    std::wstring headers = L"Content-Type: " + mimeW;
+                    if (relativePath != L"index.html") {
+                        headers += L"\r\nCache-Control: public, max-age=31536000, immutable";
+                    } else {
+                        headers += L"\r\nCache-Control: no-cache";
+                    }
+
                     ComPtr<ICoreWebView2WebResourceResponse> response;
                     env_->CreateWebResourceResponse(
                         stream.Get(),
                         200,
                         L"OK",
-                        (L"Content-Type: " + mimeW).c_str(),
+                        headers.c_str(),
                         &response
                     );
                     args->put_Response(response.Get());
@@ -347,11 +398,15 @@ namespace shine::engine {
                 else if (ext == L".png") mimeType = L"image/png";
                 else if (ext == L".svg") mimeType = L"image/svg+xml";
 
-                ComPtr<ICoreWebView2Environment> env;
+                std::wstring headers = L"Content-Type: " + std::wstring(mimeType);
+                if (relativePath != L"index.html") {
+                    headers += L"\r\nCache-Control: public, max-age=31536000, immutable";
+                } else {
+                    headers += L"\r\nCache-Control: no-cache";
+                }
 
                 ComPtr<ICoreWebView2WebResourceResponse> response;
-                env_->CreateWebResourceResponse(postDataStream, 200, L"OK",
-                                                (L"Content-Type: " + std::wstring(mimeType)).c_str(), &response);
+                env_->CreateWebResourceResponse(postDataStream, 200, L"OK", headers.c_str(), &response);
                 args->put_Response(response.Get());
             }
 
@@ -371,6 +426,7 @@ namespace shine::engine {
     void WebView::Navigate(std::string_view url) { pImpl_->Navigate(url); }
     void WebView::SetHTML(std::string_view html) { pImpl_->SetHTML(html); }
     void WebView::ExecuteScript(std::string_view js) { pImpl_->ExecuteScript(js); }
+    void WebView::PostJsonMessage(std::string_view json) { pImpl_->PostJsonMessage(json); }
     void WebView::SetAssetProvider(AssetProvider provider) { pImpl_->SetAssetProvider(std::move(provider)); }
     void WebView::OnMessageReceived(MessageCallback callback) { pImpl_->onMessage_ = std::move(callback); }
     void WebView::Resize(uint32_t width, uint32_t height) { pImpl_->Resize(width, height); }

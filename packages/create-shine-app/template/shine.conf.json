@@ -2,12 +2,17 @@
   "window": {
     "title": "Shine Secure App",
     "width": 900,
-    "height": 600
+    "height": 600,
+    "centered": true
   },
-  "capabilities": {
-    "allowedCommands": [
-      "fs_read_text_file",
-      "window_drag"
-    ]
-  }
+  "capabilities": [
+    {
+      "identifier": "main",
+      "windows": ["main"],
+      "permissions": [
+        "fs:default",
+        "window:default"
+      ]
+    }
+  ]
 }

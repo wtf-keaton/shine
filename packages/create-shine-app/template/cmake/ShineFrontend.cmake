@@ -60,6 +60,7 @@ endfunction()
 function(shine_embed_config TARGET_NAME CONFIG_FILE)
     set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
     set(OUTPUT_HEADER "${GENERATED_DIR}/shine_config.hpp")
+    set(APP_HEADER "${GENERATED_DIR}/shine_generated_app.hpp")
 
     file(MAKE_DIRECTORY "${GENERATED_DIR}")
 
@@ -77,6 +78,45 @@ ${JSON_CONTENT}
 ")
 
     file(WRITE "${OUTPUT_HEADER}" "${CPP_CODE}")
+
+    set(APP_CODE
+            "#pragma once
+
+#include <shine/app.hpp>
+
+#ifndef _DEBUG
+#include <embedded_assets.hpp>
+#include <shine_config.hpp>
+
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <string_view>
+#endif
+
+namespace shine {
+    inline App CreateApp() {
+#ifndef _DEBUG
+        App app(shine::embedded::kConfig);
+        app.GetWebView().SetAssetProvider([](std::string_view relPath)
+        -> std::optional<shine::engine::WebView::AssetResponse> {
+            auto asset = shine_app::embedded_assets::Find(relPath);
+            if (!asset) return std::nullopt;
+
+            shine::engine::WebView::AssetResponse response;
+            response.mime = asset->mime;
+            response.bytes = std::span<const std::uint8_t>(asset->data, asset->size);
+            return response;
+        });
+        return app;
+#else
+        return App();
+#endif
+    }
+}
+")
+
+    file(WRITE "${APP_HEADER}" "${APP_CODE}")
 
     target_include_directories(${TARGET_NAME} PRIVATE "${GENERATED_DIR}")
 endfunction()

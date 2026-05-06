@@ -18,6 +18,8 @@ namespace shine {
 
         App(const App&) = delete;
         App& operator=(const App&) = delete;
+        App(App&&) noexcept;
+        App& operator=(App&&) noexcept;
 
         int Run() const;
 
