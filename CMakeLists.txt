@@ -93,8 +93,8 @@ else()
     set(_shine_default_build_samples OFF)
 endif()
 
-option(SHINE_ENABLE_TESTS "Build unit tests" ON)
-option(SHINE_ENABLE_BENCHMARKS "Build benchmarks" ON)
+option(SHINE_ENABLE_TESTS "Build unit tests" OFF)
+option(SHINE_ENABLE_BENCHMARKS "Build benchmarks" OFF)
 
 if (SHINE_ENABLE_TESTS)
     enable_testing()

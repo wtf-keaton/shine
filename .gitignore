@@ -74,3 +74,4 @@ results.json
 .npmrc
 node_modules
 *.zip
+/packages/api/dist

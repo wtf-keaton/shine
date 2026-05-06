@@ -51,7 +51,15 @@ namespace shine {
 
             webView_->OnMessageReceived([this](const std::string &msg) {
                 const auto response = router_.Route(msg);
-                webView_->PostJsonMessage(response.dump());
+                const std::string response_json = response.dump();
+                webView_->PostJsonMessage(response_json);
+                webView_->PostStringMessage(response_json);
+#ifdef _DEBUG
+                webView_->ExecuteScript(
+                    "window.__SHINE_IPC_RECEIVE__ && window.__SHINE_IPC_RECEIVE__("
+                    + response_json +
+                    ");");
+#endif
             });
         }
 

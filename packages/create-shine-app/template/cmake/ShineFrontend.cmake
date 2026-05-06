@@ -31,6 +31,7 @@ function(shine_attach_frontend TARGET_NAME)
                 OUTPUT "${OUTPUT_HEADER}"
                 COMMAND "${NPM_EXECUTABLE}" --prefix "${FRONTEND_DIR}" run build
                 COMMAND node "${SCRIPTS_DIR}/embed-assets.mjs"
+                DEPENDS "${SCRIPTS_DIR}/embed-assets.mjs"
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
                 COMMENT "[Shine] Compiling React Frontend and packing assets..."
         )

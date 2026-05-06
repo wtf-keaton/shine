@@ -51,11 +51,12 @@ if (!fs.existsSync(distDir)) {
 
 fs.mkdirSync(outDir, { recursive: true });
 
-const files = listFilesRecursive(distDir).sort((a, b) => a.localeCompare(b));
+const files = listFilesRecursive(distDir)
+  .map((filePath) => ({ filePath, rel: toPosix(path.relative(distDir, filePath)) }))
+  .sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
 const entries = [];
 
-for (const filePath of files) {
-  const rel = toPosix(path.relative(distDir, filePath));
+for (const { filePath, rel } of files) {
   const data = fs.readFileSync(filePath);
   const varName = `kAsset_${rel.replace(/[^a-zA-Z0-9_]/g, "_")}`;
   entries.push({ rel, data, varName, mime: detectMime(rel) });

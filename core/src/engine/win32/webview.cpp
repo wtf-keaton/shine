@@ -15,58 +15,6 @@
 
 using namespace Microsoft::WRL;
 
-class EnvironmentOptions : public RuntimeClass<RuntimeClassFlags<ClassicCom>, ICoreWebView2EnvironmentOptions> {
-public:
-    EnvironmentOptions() = default;
-
-    HRESULT STDMETHODCALLTYPE get_AdditionalBrowserArguments(LPWSTR* value) override {
-        if (!value) return E_POINTER;
-        auto str = additionalArgs_.c_str();
-        size_t len = wcslen(str) + 1;
-        *value = static_cast<LPWSTR>(CoTaskMemAlloc(len * sizeof(wchar_t)));
-        if (*value) wcscpy_s(*value, len, str);
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE put_AdditionalBrowserArguments(LPCWSTR value) override {
-        additionalArgs_ = value ? value : L"";
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE get_TargetCompatibleBrowserVersion(LPWSTR* value) override {
-        if (!value) return E_POINTER;
-        *value = nullptr;
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE put_TargetCompatibleBrowserVersion(LPCWSTR) override {
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE get_AllowSingleSignOnUsingOSPrimaryAccount(BOOL* value) override {
-        if (!value) return E_POINTER;
-        *value = FALSE;
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE put_AllowSingleSignOnUsingOSPrimaryAccount(BOOL) override {
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE get_Language(LPWSTR* value) override {
-        if (!value) return E_POINTER;
-        *value = nullptr;
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE put_Language(LPCWSTR) override {
-        return S_OK;
-    }
-
-private:
-    std::wstring additionalArgs_;
-};
-
 static std::wstring Utf8ToWide(std::string_view utf8) {
     if (utf8.empty()) return {};
     int size = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int) utf8.size(), nullptr, 0);
@@ -134,6 +82,12 @@ namespace shine::engine {
             }
         }
 
+        void PostStringMessage(std::string_view message) {
+            if (webview_) {
+                webview_->PostWebMessageAsString(Utf8ToWide(message).c_str());
+            }
+        }
+
         void SetAssetProvider(WebView::AssetProvider provider) {
             assetProvider_ = std::move(provider);
         }
@@ -183,77 +137,95 @@ namespace shine::engine {
             auto tempDir = std::filesystem::temp_directory_path() / "Shine_WebView_Data";
             std::wstring userDataFolder = tempDir.wstring();
 
-            auto envOptions = Make<EnvironmentOptions>();
-            envOptions->put_AdditionalBrowserArguments(
-                    L"--disable-background-networking "
-                    L"--disable-default-apps "
-                    L"--disable-sync "
-                    L"--no-first-run "
-                    L"--disable-component-update "
-                    L"--disable-domain-reliability "
-                    L"--disable-breakpad "
-                    L"--disable-hang-monitor "
-                    L"--disable-infobars "
-                    L"--disable-features=OptimizationHints,MediaRouter,HeavyAdIntervention"
-                );
+            CreateEnvironment(userDataFolder);
+        }
 
-            CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), envOptions.Get(),
-                                                      Callback<
-                                                          ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                                                          [this](HRESULT result,
-                                                                 ICoreWebView2Environment *env) -> HRESULT {
-                                                              if (FAILED(result)) return result;
+        void CreateEnvironment(const std::wstring& userDataFolder) {
+            const HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
+                nullptr,
+                userDataFolder.c_str(),
+                nullptr,
+                Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+                    [this](
+                        HRESULT result,
+                        ICoreWebView2Environment* env
+                    ) -> HRESULT {
+                        if (FAILED(result)) {
+                            std::cerr << "[Shine WebView2] Failed to create environment. HRESULT: 0x"
+                                      << std::hex << result << std::dec << std::endl;
+                            return S_OK;
+                        }
 
-                                                              env_ = env;
+                        env_ = env;
+                        CreateController();
+                        return S_OK;
+                    }).Get()
+            );
 
-                                                              env->CreateCoreWebView2Controller(hwnd_,
-                                                                  Callback<
-                                                                      ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                                                                      [this](HRESULT result,
-                                                                             ICoreWebView2Controller *controller) ->
-                                                                  HRESULT {
-                                                                          if (FAILED(result)) return result;
+            if (FAILED(hr)) {
+                std::cerr << "[Shine WebView2] Environment creation call failed. HRESULT: 0x"
+                          << std::hex << hr << std::dec << std::endl;
+            }
+        }
 
-                                                                          controller_ = controller;
-                                                                          controller_->get_CoreWebView2(&webview_);
+        void CreateController() {
+            env_->CreateCoreWebView2Controller(
+                hwnd_,
+                Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                    [this](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+                        if (FAILED(result)) {
+                            std::cerr << "[Shine WebView2] Failed to create controller. HRESULT: 0x"
+                                      << std::hex << result << std::dec << std::endl;
+                            return S_OK;
+                        }
 
-                                                                          RECT bounds;
-                                                                          GetClientRect(hwnd_, &bounds);
-                                                                          controller_->put_Bounds(bounds);
+                        controller_ = controller;
+                        controller_->get_CoreWebView2(&webview_);
 
-                                                                          ApplyMemorySettings();
+                        RECT bounds;
+                        GetClientRect(hwnd_, &bounds);
+                        controller_->put_Bounds(bounds);
 
-                                                                          SetupIpc();
-                                                                          SetupResourceInterceptor();
+                        ApplyMemorySettings();
 
-                                                                          if (!pending_url_.empty()) {
-                                                                              Navigate(pending_url_);
-                                                                              pending_url_.clear();
-                                                                          }
+                        SetupIpc();
+                        SetupResourceInterceptor();
 
-                                                                          if (!pending_html_.empty()) {
-                                                                              SetHTML(pending_html_);
-                                                                              pending_html_.clear();
-                                                                          }
-                                                                          return S_OK;
-                                                                      }).Get());
-                                                              return S_OK;
-                                                          }).Get());
+                        if (!pending_url_.empty()) {
+                            Navigate(pending_url_);
+                            pending_url_.clear();
+                        }
+
+                        if (!pending_html_.empty()) {
+                            SetHTML(pending_html_);
+                            pending_html_.clear();
+                        }
+                        return S_OK;
+                    }).Get()
+            );
         }
 
         void ApplyMemorySettings() {
             ComPtr<ICoreWebView2Settings> settings;
             if (FAILED(webview_->get_Settings(&settings))) return;
 
-            settings->put_AreDevToolsEnabled(FALSE);
+            settings->put_IsWebMessageEnabled(TRUE);
             settings->put_AreDefaultScriptDialogsEnabled(FALSE);
             settings->put_IsStatusBarEnabled(FALSE);
+#ifndef _DEBUG
+            settings->put_AreDevToolsEnabled(FALSE);
             settings->put_AreDefaultContextMenusEnabled(FALSE);
             settings->put_IsBuiltInErrorPageEnabled(FALSE);
+#else
+            settings->put_AreDevToolsEnabled(TRUE);
+            settings->put_AreDefaultContextMenusEnabled(TRUE);
+#endif
 
             ComPtr<ICoreWebView2Settings3> settings3;
             if (SUCCEEDED(settings.As(&settings3))) {
+#ifndef _DEBUG
                 settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+#endif
             }
 
             ComPtr<ICoreWebView2Settings4> settings4;
@@ -427,6 +399,7 @@ namespace shine::engine {
     void WebView::SetHTML(std::string_view html) { pImpl_->SetHTML(html); }
     void WebView::ExecuteScript(std::string_view js) { pImpl_->ExecuteScript(js); }
     void WebView::PostJsonMessage(std::string_view json) { pImpl_->PostJsonMessage(json); }
+    void WebView::PostStringMessage(std::string_view message) { pImpl_->PostStringMessage(message); }
     void WebView::SetAssetProvider(AssetProvider provider) { pImpl_->SetAssetProvider(std::move(provider)); }
     void WebView::OnMessageReceived(MessageCallback callback) { pImpl_->onMessage_ = std::move(callback); }
     void WebView::Resize(uint32_t width, uint32_t height) { pImpl_->Resize(width, height); }
