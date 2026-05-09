@@ -27,13 +27,23 @@ function(shine_attach_frontend TARGET_NAME)
     if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
         message(STATUS "[Shine] Release mode: Frontend will be built and embedded.")
 
+        file(GLOB_RECURSE FRONTEND_INPUTS CONFIGURE_DEPENDS
+                "${FRONTEND_DIR}/index.html"
+                "${FRONTEND_DIR}/package.json"
+                "${FRONTEND_DIR}/public/*"
+                "${FRONTEND_DIR}/src/*"
+        )
+
         add_custom_command(
                 OUTPUT "${OUTPUT_HEADER}"
                 COMMAND "${NPM_EXECUTABLE}" --prefix "${FRONTEND_DIR}" run build
                 COMMAND node "${SCRIPTS_DIR}/embed-assets.mjs"
-                DEPENDS "${SCRIPTS_DIR}/embed-assets.mjs"
+                DEPENDS
+                "${SCRIPTS_DIR}/embed-assets.mjs"
+                ${FRONTEND_INPUTS}
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
                 COMMENT "[Shine] Compiling React Frontend and packing assets..."
+                VERBATIM
         )
 
         set(ASSETS_TARGET "${TARGET_NAME}_Assets")
@@ -46,9 +56,10 @@ function(shine_attach_frontend TARGET_NAME)
         set(ASSETS_TARGET "${TARGET_NAME}_DevServer")
 
         add_custom_target(${ASSETS_TARGET}
-                COMMAND node "${SCRIPTS_DIR}/dev-server.mjs" "${NPM_EXECUTABLE}"
+                COMMAND node "${SCRIPTS_DIR}/dev-server.mjs" "${NPM_EXECUTABLE}" "${CMAKE_CURRENT_BINARY_DIR}/.shine"
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                 COMMENT "[Shine] Checking and managing Vite dev server..."
+                VERBATIM
         )
 
         add_dependencies(${TARGET_NAME} ${ASSETS_TARGET})
@@ -121,3 +132,4 @@ namespace shine {
 
     target_include_directories(${TARGET_NAME} PRIVATE "${GENERATED_DIR}")
 endfunction()
+

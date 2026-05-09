@@ -76,7 +76,7 @@ namespace shine {
 #ifdef _DEBUG
             GetWebView().Navigate("http://localhost:1745");
 #else
-            GetWebView().Navigate("http://shine-ui.app/index.html");
+            GetWebView().Navigate("http://shine-ui.app/");
 #endif
 
 #ifdef _WIN32

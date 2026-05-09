@@ -309,8 +309,11 @@ namespace shine::engine {
             if (relativePath.empty() || relativePath == L"/") relativePath = L"index.html";
             if (relativePath[0] == L'/') relativePath.erase(0, 1);
 
+            const bool spaRouteRequest = std::filesystem::path(relativePath).extension().empty();
+            const std::wstring assetPath = spaRouteRequest ? L"index.html" : relativePath;
+
             if (assetProvider_) {
-                std::string relUtf8 = WideToUtf8(relativePath);
+                std::string relUtf8 = WideToUtf8(assetPath);
                 std::optional<WebView::AssetResponse> asset = assetProvider_(relUtf8);
                 if (asset && !asset->bytes.empty()) {
                     HGLOBAL hmem = GlobalAlloc(GMEM_MOVEABLE, asset->bytes.size());
@@ -333,7 +336,7 @@ namespace shine::engine {
 
                     std::wstring mimeW = Utf8ToWide(asset->mime.empty() ? "application/octet-stream" : asset->mime);
                     std::wstring headers = L"Content-Type: " + mimeW;
-                    if (relativePath != L"index.html") {
+                    if (assetPath != L"index.html") {
                         headers += L"\r\nCache-Control: public, max-age=31536000, immutable";
                     } else {
                         headers += L"\r\nCache-Control: no-cache";
@@ -352,7 +355,7 @@ namespace shine::engine {
                 }
             }
 
-            auto assetsPath = std::filesystem::current_path() / "assets" / relativePath;
+            auto assetsPath = std::filesystem::current_path() / "assets" / assetPath;
 
             if (!std::filesystem::exists(assetsPath)) {
                 std::wcerr << L"[Shine Error] File not found: " << assetsPath.wstring() << std::endl;
@@ -371,7 +374,7 @@ namespace shine::engine {
                 else if (ext == L".svg") mimeType = L"image/svg+xml";
 
                 std::wstring headers = L"Content-Type: " + std::wstring(mimeType);
-                if (relativePath != L"index.html") {
+                if (assetPath != L"index.html") {
                     headers += L"\r\nCache-Control: public, max-age=31536000, immutable";
                 } else {
                     headers += L"\r\nCache-Control: no-cache";
